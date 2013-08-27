@@ -920,7 +920,7 @@ begin
     Inc(P);
 end;
 
-function _ReadStr(var P: PChar): string;
+function _ReadStr(var P: PChar; UntilChars : TSysCharSet): string;
 var
   oldP: PChar;
   stringChar: Char;
@@ -936,7 +936,7 @@ begin
   begin
     if stringChar = #0 then
     begin
-      if CharInSet(P^, (WhiteSpace + [#0, '='])) then
+      if CharInSet(P^,UntilChars) then
         Break;
     end
     else if (P^ = stringChar) then
@@ -961,14 +961,14 @@ begin
     _SkipBlank(P);
     if P^ = #0 then
       Break;
-    Key := _ReadStr(P);
+    Key := _ReadStr(P, (WhiteSpace + [#0, '=']));
     Value := '';
     _SkipBlank(P);
     if P^ = '=' then
     begin
       Inc(P);
       _SkipBlank(P);
-      Value := _ReadStr(P);
+      Value := _ReadStr(P,  (WhiteSpace + [#0]));
     end;
     SetLength(Attrs, Length(Attrs) + 1);
     Attrs[Length(Attrs) - 1].Key := Key;
@@ -985,7 +985,7 @@ var
 begin
   P := PChar(S);
   _SkipBlank(P);
-  ATagName := UpperCase(_ReadStr(P));
+  ATagName := UpperCase(_ReadStr(P,  (WhiteSpace + [#0, '/', '>'])));
 
   _ParserAttrs(P, Attrs);
 end;
