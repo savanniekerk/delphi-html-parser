@@ -123,9 +123,9 @@ begin
         Memo2.Lines.Add(Format('%s  = "%s"',
           [attrs[i], e.Attributes[attrs[i]]]));
       end;
-      Memo2.Lines.Add('==================InnerText===========================');
+      Memo2.Lines.Add('==================InnerHTML===========================');
 
-      Memo2.Lines.Add(e.InnerText);
+      Memo2.Lines.Add(e.InnerHtml);
        //}
       //Memo2.Text := e.InnerText;
       Memo2.Lines.EndUpdate;

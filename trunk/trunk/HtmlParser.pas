@@ -47,7 +47,7 @@ type
     }
     function FindElements(ATagName: WideString; AAttributes: WideString;
       AOnlyInTopElement: Boolean): IHtmlElementList; stdcall;
-    //用CSS选择器语法查找Element
+    // 用CSS选择器语法查找Element
     function SimpleCSSSelector(const selector: WideString)
       : IHtmlElementList; stdcall;
     // 枚举属性
@@ -920,7 +920,7 @@ begin
     Inc(P);
 end;
 
-function _ReadStr(var P: PChar; UntilChars : TSysCharSet): string;
+function _ReadStr(var P: PChar; UntilChars: TSysCharSet): string;
 var
   oldP: PChar;
   stringChar: Char;
@@ -936,7 +936,7 @@ begin
   begin
     if stringChar = #0 then
     begin
-      if CharInSet(P^,UntilChars) then
+      if CharInSet(P^, UntilChars) then
         Break;
     end
     else if (P^ = stringChar) then
@@ -968,7 +968,7 @@ begin
     begin
       Inc(P);
       _SkipBlank(P);
-      Value := _ReadStr(P,  (WhiteSpace + [#0]));
+      Value := _ReadStr(P, (WhiteSpace + [#0]));
     end;
     SetLength(Attrs, Length(Attrs) + 1);
     Attrs[Length(Attrs) - 1].Key := Key;
@@ -985,7 +985,7 @@ var
 begin
   P := PChar(S);
   _SkipBlank(P);
-  ATagName := UpperCase(_ReadStr(P,  (WhiteSpace + [#0, '/', '>'])));
+  ATagName := UpperCase(_ReadStr(P, (WhiteSpace + [#0, '/', '>'])));
 
   _ParserAttrs(P, Attrs);
 end;
@@ -1069,7 +1069,7 @@ procedure _ParserHTML(const Source: string; AElementList: THtmlElementList);
 var
   BeginLineNum, LineNum, BeginColNum, ColNum: Integer;
 
-  procedure IncSrc(var P: PChar);
+  procedure IncSrc(var P: PChar); overload;
   begin
     if P^ = #10 then
     begin
@@ -1079,6 +1079,14 @@ var
     else
       Inc(ColNum);
     Inc(P);
+  end;
+
+  procedure IncSrc(var P: PChar; step: Integer); overload;
+  var
+    I: Integer;
+  begin
+    for I := 0 to step - 1 do
+      IncSrc(P);
   end;
 
   procedure SkipBlank(var P: PChar);
@@ -1113,23 +1121,43 @@ var
     oldP: PChar;
   begin
     oldP := P;
-    while True do
+    if Copy(P, 1, 4) = '<!--' then
     begin
-      case P^ of
-        #0:
+      IncSrc(P, 5);
+      while True do
+      begin
+        if P^ = #0 then
+          DoError(Format('未完结的Style行:%d;列:%d;', [LineNum, ColNum]))
+        else if P^ = '>' then
+        begin
+          if ((P - 1)^ = '-') and ((P - 2)^ = '-') then
           begin
+            IncSrc(P);
+            SkipBlank(P);
             Break;
           end;
-        '<':
-          begin
-            if IsEndOfTag(P, 'style') then
+        end;
+        IncSrc(P);
+      end;
+    end
+    else
+      while True do
+      begin
+        case P^ of
+          #0:
             begin
               Break;
             end;
-          end;
+          '<':
+            begin
+              if IsEndOfTag(P, 'style') then
+              begin
+                Break;
+              end;
+            end;
+        end;
+        IncSrc(P);
       end;
-      IncSrc(P);
-    end;
     SetString(Result, oldP, P - oldP);
   end;
 
@@ -1141,70 +1169,93 @@ var
   begin
     oldP := P;
     stringChar := #0;
-    while True do
+    SkipBlank(P);
+    if Copy(P, 1, 4) = '<!--' then
     begin
-      case P^ of
-        #0:
-          Break;
-        '"', '''': // 字符串
-          begin
-            stringChar := P^;
-            PreIsblique := false;
-            IncSrc(P);
-            while True do
-            begin
-              if P^ = #0 then
-                Break;
-              if (P^ = stringChar) and (not PreIsblique) then
-                Break;
-              if P^ = '\' then
-                PreIsblique := not PreIsblique
-              else
-                PreIsblique := false;
-              IncSrc(P);
-            end;
-          end;
-        '/': // 注释
+      IncSrc(P, 5);
+      while True do
+      begin
+        if P^ = #0 then
+          DoError(Format('未完结的Script行:%d;列:%d;', [LineNum, ColNum]))
+        else if P^ = '>' then
+        begin
+          if ((P - 1)^ = '-') and ((P - 2)^ = '-') then
           begin
             IncSrc(P);
-            case P^ of
-              '/': // 行注释
-                begin
-                  while True do
-                  begin
-                    if CharInSet(P^, [#0, #$0A]) then
-                    begin
-                      Break;
-                    end;
-                    IncSrc(P);
-                  end;
-                end;
-              '*': // 块注释
-                begin
-                  IncSrc(P);
-                  IncSrc(P);
-                  while True do
-                  begin
-                    if P^ = #0 then
-                      Break;
-                    if (P^ = '/') and (P[-1] = '*') then
-                    begin
-                      Break;
-                    end;
-                    IncSrc(P);
-                  end;
-                end;
-            end;
+            SkipBlank(P);
+            Break;
           end;
-        '<':
-          begin
-            if IsEndOfTag(P, 'script') then
-            begin
-              Break;
-            end;
-          end;
+        end;
+        IncSrc(P);
       end;
-      IncSrc(P);
+    end
+    else
+    begin
+      while True do
+      begin
+        case P^ of
+          #0:
+            Break;
+          '"', '''': // 字符串
+            begin
+              stringChar := P^;
+              PreIsblique := false;
+              IncSrc(P);
+              while True do
+              begin
+                if P^ = #0 then
+                  Break;
+                if (P^ = stringChar) and (not PreIsblique) then
+                  Break;
+                if P^ = '\' then
+                  PreIsblique := not PreIsblique
+                else
+                  PreIsblique := false;
+                IncSrc(P);
+              end;
+            end;
+          '/': // 注释
+            begin
+              IncSrc(P);
+              case P^ of
+                '/': // 行注释
+                  begin
+                    while True do
+                    begin
+                      if CharInSet(P^, [#0, #$0A]) then
+                      begin
+                        Break;
+                      end;
+                      IncSrc(P);
+                    end;
+                  end;
+                '*': // 块注释
+                  begin
+                    IncSrc(P);
+                    IncSrc(P);
+                    while True do
+                    begin
+                      if P^ = #0 then
+                        Break;
+                      if (P^ = '/') and (P[-1] = '*') then
+                      begin
+                        Break;
+                      end;
+                      IncSrc(P);
+                    end;
+                  end;
+              end;
+            end;
+          '<':
+            begin
+              if IsEndOfTag(P, 'script') then
+              begin
+                Break;
+              end;
+            end;
+        end;
+        IncSrc(P);
+      end;
     end;
     SetString(Result, oldP, P - oldP);
   end;
