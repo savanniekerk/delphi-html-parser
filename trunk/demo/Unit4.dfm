@@ -34,6 +34,7 @@ object Form4: TForm4
     Indent = 19
     TabOrder = 1
     OnChange = TreeView1Change
+    ExplicitLeft = 455
   end
   object Memo2: TMemo
     Left = 0
