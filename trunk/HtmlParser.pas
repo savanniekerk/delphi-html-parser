@@ -7,6 +7,11 @@
 
   http://www.raysoftware.cn/?p=370
 
+  感谢牛人杨延哲在HTML语法和CSS语法方面的帮助.
+  Thank Yang Yanzhe.
+
+  http://www.pockhero.com/
+
 }
 unit HtmlParser;
 
