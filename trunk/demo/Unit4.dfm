@@ -3,7 +3,7 @@ object Form4: TForm4
   Top = 248
   Caption = 'Form4'
   ClientHeight = 506
-  ClientWidth = 795
+  ClientWidth = 807
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -11,40 +11,29 @@ object Form4: TForm4
   Font.Name = 'Tahoma'
   Font.Style = []
   OldCreateOrder = False
+  OnClose = FormClose
   OnCreate = FormCreate
   PixelsPerInch = 96
   TextHeight = 13
   object Button1: TButton
-    Left = 360
-    Top = 24
+    Left = 361
+    Top = 26
     Width = 89
     Height = 97
     Caption = 'Parser'
     TabOrder = 0
     OnClick = Button1Click
   end
-  object TreeView1: TTreeView
-    Left = 456
-    Top = 0
-    Width = 339
-    Height = 309
-    Align = alRight
-    Anchors = [akLeft, akTop, akRight, akBottom]
-    HideSelection = False
-    Indent = 19
-    TabOrder = 1
-    OnChange = TreeView1Change
-    ExplicitLeft = 455
-  end
   object Memo2: TMemo
     Left = 0
     Top = 309
-    Width = 795
+    Width = 807
     Height = 197
     Align = alBottom
     Anchors = [akLeft, akTop, akRight, akBottom]
     ScrollBars = ssBoth
-    TabOrder = 2
+    TabOrder = 1
+    ExplicitWidth = 795
   end
   object Panel1: TPanel
     Left = 0
@@ -53,11 +42,11 @@ object Form4: TForm4
     Height = 309
     Align = alLeft
     Caption = 'Panel1'
-    TabOrder = 3
+    TabOrder = 2
     object Memo1: TMemo
       Left = 2
       Top = 64
-      Width = 343
+      Width = 337
       Height = 222
       Lines.Strings = (
         
@@ -4162,6 +4151,105 @@ object Form4: TForm4
       OnClick = Button3Click
     end
   end
+  object Panel2: TPanel
+    Left = 464
+    Top = 0
+    Width = 343
+    Height = 309
+    Align = alRight
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    TabOrder = 3
+    ExplicitWidth = 331
+    object GroupBox1: TGroupBox
+      Left = 1
+      Top = 1
+      Width = 341
+      Height = 144
+      Align = alTop
+      Caption = 'parser html tree'
+      TabOrder = 0
+      object TreeView1: TTreeView
+        Left = 2
+        Top = 15
+        Width = 337
+        Height = 127
+        Align = alClient
+        HideSelection = False
+        Indent = 19
+        TabOrder = 0
+        OnChange = TreeView1Change
+        ExplicitHeight = 90
+      end
+    end
+    object GroupBox2: TGroupBox
+      Left = 1
+      Top = 145
+      Width = 341
+      Height = 163
+      Align = alClient
+      Caption = 'CSS selector search'
+      TabOrder = 1
+      ExplicitLeft = 96
+      ExplicitTop = 216
+      ExplicitWidth = 185
+      ExplicitHeight = 105
+      object ListBox1: TListBox
+        Left = 2
+        Top = 39
+        Width = 337
+        Height = 122
+        Align = alClient
+        ItemHeight = 13
+        TabOrder = 0
+        ExplicitLeft = 4
+        ExplicitTop = 17
+        ExplicitWidth = 181
+        ExplicitHeight = 88
+      end
+      object Panel3: TPanel
+        Left = 2
+        Top = 15
+        Width = 337
+        Height = 24
+        Align = alTop
+        BevelOuter = bvNone
+        TabOrder = 1
+        ExplicitLeft = 4
+        ExplicitTop = 23
+        object Label1: TLabel
+          Left = 0
+          Top = 0
+          Width = 94
+          Height = 24
+          Align = alLeft
+          Caption = 'CSS Selector script:'
+          ExplicitHeight = 13
+        end
+        object Edit2: TEdit
+          Left = 94
+          Top = 0
+          Width = 168
+          Height = 24
+          Align = alClient
+          TabOrder = 0
+          Text = 'div#header ~ div#main div#container [role]'
+          ExplicitLeft = 96
+          ExplicitWidth = 166
+          ExplicitHeight = 21
+        end
+        object Button4: TButton
+          Left = 262
+          Top = 0
+          Width = 75
+          Height = 24
+          Align = alRight
+          Caption = 'search'
+          TabOrder = 1
+          OnClick = Button4Click
+        end
+      end
+    end
+  end
   object IdHTTP1: TIdHTTP
     AllowCookies = True
     ProxyParams.BasicAuthentication = False
@@ -4183,10 +4271,5 @@ object Form4: TForm4
   object OpenDialog1: TOpenDialog
     Left = 392
     Top = 248
-  end
-  object XMLDocument1: TXMLDocument
-    Left = 368
-    Top = 176
-    DOMVendorDesc = 'MSXML'
   end
 end

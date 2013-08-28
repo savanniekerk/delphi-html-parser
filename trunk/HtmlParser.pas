@@ -5,6 +5,8 @@
 
   wr960204 武稀松 2013
 
+  http://www.raysoftware.cn/?p=370
+
 }
 unit HtmlParser;
 
@@ -47,7 +49,11 @@ type
     }
     function FindElements(ATagName: WideString; AAttributes: WideString;
       AOnlyInTopElement: Boolean): IHtmlElementList; stdcall;
-    // 用CSS选择器语法查找Element
+    { 用CSS选择器语法查找Element,不支持"伪类"
+      CSS Selector Style search,not support Pseudo-classes.
+
+      http://www.w3.org/TR/CSS2/selector.html
+    }
     function SimpleCSSSelector(const selector: WideString)
       : IHtmlElementList; stdcall;
     // 枚举属性
@@ -94,6 +100,7 @@ implementation
 
 const
   WhiteSpace = [' ', #13, #10, #9];
+  // CSS Attribute Compare Operator
   OperatorChar = ['=', '!', '*', '~', '|', '^', '$'];
   MaxListSize = Maxint div 16;
 
@@ -782,13 +789,10 @@ end;
 constructor TStringBuilder.Create(ABufferSize: Integer);
 begin
   inherited Create;
-  { if ABufferSize = 0 then
-    FBuffSize := 1024
-    else
+  if ABufferSize = 0 then
+    FBuffSize := 4096
+  else
     FBuffSize := ABufferSize;
-  }
-  FBuffSize := ABufferSize;
-  FBuffSize := 2;
   SetLength(FBuffer, FBuffSize);
   FBuffMax := FBuffSize - 1;
   FIndex := 0;
@@ -999,12 +1003,14 @@ end;
 
 function _aoEqual(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 begin
-  Result := E.FAttributes.ValueOf(Item.Key) = Item.Value;
+  Result := E.FAttributes.ContainsKey(Item.Key) and
+    (E.FAttributes.ValueOf(Item.Key) = Item.Value);
 end;
 
 function _aoNotEqual(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 begin
-  Result := E.FAttributes.ValueOf(Item.Key) <> Item.Value;
+  Result := E.FAttributes.ContainsKey(Item.Key) and
+    (E.FAttributes.ValueOf(Item.Key) <> Item.Value);
 end;
 
 function _aoIncludeWord(const Item: TAttrSelectorItem; E: THtmlElement)
@@ -1013,6 +1019,9 @@ var
   S: TStringDynArray;
   I: Integer;
 begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
   Result := True;
   S := SplitStr(WhiteSpace, E.FAttributes.ValueOf(Item.Key));
   for I := Low(S) to High(S) do
@@ -1026,6 +1035,9 @@ var
   S: TStringDynArray;
   I: Integer;
 begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
   S := SplitStr((WhiteSpace + ['_', '-']), E.FAttributes.ValueOf(Item.Key));
   Result := (Length(S) > 0) and (S[0] = Item.Value);
 end;
@@ -1034,6 +1046,9 @@ function _aoBegin(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 var
   attr, Value: string;
 begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
   attr := E.FAttributes.ValueOf(Item.Key);
   Value := Item.Value;
   Result := (Length(attr) > Length(Value)) and
@@ -1044,6 +1059,9 @@ function _aoEnd(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 var
   attr, Value: string;
 begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
   attr := E.FAttributes.ValueOf(Item.Key);
   Value := Item.Value;
   Result := (Length(attr) > Length(Value)) and
@@ -1052,6 +1070,9 @@ end;
 
 function _aoContain(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
   Result := Pos(Item.Value, E.FAttributes.ValueOf(Item.Key)) > 0;
 end;
 
@@ -1838,7 +1859,8 @@ procedure THtmlElement._Select(Item: PCSSSelectorItem; Count: Integer;
     I: Integer;
   begin
     Result := false;
-    if (Item^.szTag = '') or (Item^.szTag = FTagName) then
+    if (Item^.szTag = '') or (Item^.szTag = '*') or (Item^.szTag = FTagName)
+    then
     begin
       for I := Low(Item^.Attributes) to High(Item^.Attributes) do
         if not AttrCompareFuns[Item^.Attributes[I].AttrOperator]
@@ -1983,13 +2005,12 @@ var
       IncSrc(P);
   end;
 
-  function ReadStr(var P: PChar): string;
+  function ReadStr(var P: PChar; Chars: TSysCharSet): string;
   var
     oldP: PChar;
   begin
     oldP := P;
-    while not(CharInSet(P^, (WhiteSpace + OperatorChar + ['[', ']', '"', '''',
-      ',', '.', '#', #0]))) do
+    while not(CharInSet(P^, Chars)) do
       IncSrc(P);
     SetString(Result, oldP, P - oldP);
   end;
@@ -2112,7 +2133,9 @@ var
             pAttr := AddAttr(Item);
             pAttr^.Key := 'class';
             pAttr^.AttrOperator := aoIncludeWord;
-            pAttr^.Value := ReadStr(P);
+            pAttr^.Value :=
+              ReadStr(P, (WhiteSpace + OperatorChar + ['[', ']', '"', '''', ',',
+              '.', '#', #0]));
           end;
         '#': // id
           begin
@@ -2120,7 +2143,9 @@ var
             pAttr := AddAttr(Item);
             pAttr^.Key := 'id';
             pAttr^.AttrOperator := aoEqual;
-            pAttr^.Value := ReadStr(P);
+            pAttr^.Value :=
+              ReadStr(P, (WhiteSpace + OperatorChar + ['[', ']', '"', '''', ',',
+              '.', '#', #0]));
           end;
         '[': // attribute
           begin
@@ -2147,7 +2172,9 @@ var
           end;
       else
         begin
-          Item.szTag := UpperCase(ReadStr(P));
+          Item.szTag :=
+            UpperCase(ReadStr(P, (WhiteSpace + ['[', ']', '"', '''', ',', '.',
+            '#', #0])));
         end;
       end;
     end;
