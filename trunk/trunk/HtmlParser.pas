@@ -1327,7 +1327,7 @@ begin
               IncSrc(P); //
               while True do
               begin
-                if (P^ = '>') and (P[-1] = ']') and (P[-2] = ']') then
+                if (P^ = '>') and (P[-1] = ']') then
                 begin
                   IncSrc(P);
                   Break;
