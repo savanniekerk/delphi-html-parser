@@ -21,6 +21,9 @@ uses
   SysUtils; // , generics.Collections;
 
 type
+{$IFNDEF MSWINDOWS}
+  WideString = String;
+{$ENDIF}
   IHtmlElement = interface;
   IHtmlElementList = interface;
   TEnumAttributeNameCallBack = function(AParam: Pointer;
@@ -125,7 +128,7 @@ type
 {$ELSE}
   TStringDynArray = array of string;
 {$ENDIF}
-{$IFEND}
+{$ENDIF}
   TPointerList = array [0 .. MaxListSize - 1] of Pointer;
   PPointerList = ^TPointerList;
 
@@ -1474,7 +1477,10 @@ end;
 function BuildTree(ElementList: THtmlElementList): THtmlElement;
 var
   I, J: Integer;
-  E, T: THtmlElement;
+  [Weak]
+  E: THtmlElement;
+  [Weak]
+  T: THtmlElement;
   FoundIndex: Integer;
   TagProperty: Word;
 begin
@@ -1488,6 +1494,7 @@ begin
   begin
     E := ElementList[I];
     TagProperty := GetTagProperty(E.FTagName);
+
 
     // 空节点,往下找,如果下一个带Tag的节点不是它的关闭节点,那么自动关闭
     {
