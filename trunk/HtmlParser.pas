@@ -18,7 +18,8 @@ unit HtmlParser;
 interface
 
 uses
-  SysUtils; // , generics.Collections;
+  SysUtils, generics.Collections;
+{$define USE_GENERICS}
 
 type
 {$IFNDEF MSWINDOWS}
@@ -101,12 +102,14 @@ implementation
 
 {$IF NOT Declared(TStringBuilder)}
 {$DEFINE CUSTOM_STRINGBUILDER}
-{$IFEND}
+{$ENDIF}
 {$IF Declared(TArray)}
 {$DEFINE USE_GENERICS}
-{$IFEND}
+{$ENDIF}
 
 const
+  StrBaseIndex = {$IF defined(CPUARM)}0{$ELSE}1{$ENDIF};
+
   WhiteSpace = [' ', #13, #10, #9];
   // CSS Attribute Compare Operator
   OperatorChar = ['=', '!', '*', '~', '|', '^', '$'];
@@ -120,6 +123,30 @@ const
   TpPreserveWhitespace = $10;
 
   tpInlineOrEmpty = TpInline or TpEmpty;
+
+function str_Idx(const SubStr, Value: string): Integer;
+begin
+  Result := System.Pos(SubStr, Value){$IF defined(CPUARM)} - 1{$ENDIF};
+end;
+
+function Str_cpy(const Value: string; StartIndex, Length: Integer): string;
+begin
+  Result := System.Copy(Value, StartIndex
+{$IF defined(CPUARM)} + 1{$ENDIF}, Length);
+end;
+
+function Str_Del(const Value: string; StartIndex, Count: Integer): string;
+begin
+  Result := Value;
+  System.Delete(Result, StartIndex {$IF defined(CPUARM)} + 1{$ENDIF}, Count);
+end;
+
+function Str_Inst(const Source: string; StartIndex: Integer;
+  const Value: string): string;
+begin
+  Result := Source;
+  System.Insert(Value, Result, StartIndex + 1);
+end;
 
 type
 {$IF NOT Declared(TStringDynArray)}
@@ -136,6 +163,7 @@ type
 {$IFNDEF USE_GENERICS}
 
   { 为了不引入Classes单元,因为在高版本Delphi中Classes单元往往是导致体积膨胀最快的因素. }
+  [weak]
   TList = class
   private
     FList: PPointerList;
@@ -173,6 +201,7 @@ type
   { 没有使用泛型单元的容器,是因为为了可以在低版本Delphi上编译 }
   TIHtmlElementList = class(TInterfacedObject, IHtmlElementList)
   private
+    [weak]
     FList: TList;
     function GetItems(Index: Integer): IHtmlElement; stdcall;
     procedure SetItems(Index: Integer; const Value: IHtmlElement);
@@ -200,6 +229,7 @@ type
     Value: string;
   end;
 
+  [weak]
   TStringDictionary = class
   private
     Buckets: array of PHashItem;
@@ -224,11 +254,29 @@ type
 
   TStringDictionary = TDictionary<string, string>;
   THtmlElementList = TList<THtmlElement>;
-  TIHtmlElementList = TList<IHtmlElement>;
+
+  TIHtmlElementList = class(TInterfacedObject, IHtmlElementList)
+    //
+    [weak]
+    FList: TList<IHtmlElement>;
+    function Add(Value: IHtmlElement): Integer;
+    procedure Delete(Index: Integer);
+    function IndexOf(Item: IHtmlElement): Integer;
+    //
+    function GetCount: Integer; stdcall;
+    function GetItems(Index: Integer): IHtmlElement; stdcall;
+    procedure SetItems(Index: Integer; const Value: IHtmlElement);
+    property Count: Integer read GetCount;
+    property Items[Index: Integer]: IHtmlElement read GetItems write SetItems; default;
+  public
+    constructor Create();
+    destructor Destroy; override;
+  end;
 {$ENDIF}
 {$IFDEF CUSTOM_STRINGBUILDER}
 
   { 低版本Delphi中没有TStringBuilder }
+  [weak]
   TStringBuilder = class(TObject)
   private
     FBuffMax, FBuffSize, FIndex: Integer;
@@ -290,6 +338,7 @@ type
 {$IFEND}
   TAttributes = TStringDictionary;
 
+  [weak]
   THtmlElement = class(TInterfacedObject, IHtmlElement, IHtmlElementObj)
     FClosed: Boolean;
 
@@ -302,25 +351,31 @@ type
     FOrignal: string;
 
     FAttributes: TAttributes;
-
     FChildren: TIHtmlElementList;
     FSourceLine: Integer;
     FSourceCol: Integer;
-
+    [weak]
     constructor Create(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     constructor CreateAsText(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     constructor CreateAsScript(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     constructor CreateAsStyle(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     constructor CreateAsComment(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     constructor CreateAsTag(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     constructor CreateAsDocType(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
+    [weak]
     destructor Destroy; override;
     procedure _GetHtml(IncludeSelf: Boolean; Sb: TStringBuilder);
     procedure _GetText(IncludeSelf: Boolean; Sb: TStringBuilder);
@@ -682,7 +737,7 @@ var
   I: Integer;
 begin
   Result := 0;
-  for I := 1 to Length(Key) do
+  for I := StrBaseIndex to Length(Key){$IF defined(CPUARM)} - 1{$ENDIF} do
     Result := ((Result shl 2) or (Result shr (SizeOf(Result) * 8 - 2)))
       xor Ord(Key[I]);
 end;
@@ -759,8 +814,11 @@ end;
 
 destructor TIHtmlElementList.Destroy;
 begin
-  Clear;
-  FList.Free;
+  if FList <> nil then
+  begin
+    Clear;
+    FList.Free;
+  end;
   inherited Destroy;
 end;
 
@@ -789,6 +847,48 @@ begin
   if Value <> nil then
     Value._AddRef;
   Items[index] := Value;
+end;
+{$ELSE}
+
+function TIHtmlElementList.Add(Value: IHtmlElement): Integer;
+begin
+  Result := FList.Add(Value);
+end;
+
+procedure TIHtmlElementList.Delete(Index: Integer);
+begin
+  FList.Delete(Index);
+end;
+
+function TIHtmlElementList.GetCount: Integer; stdcall;
+begin
+  Result := FList.Count;
+end;
+
+function TIHtmlElementList.GetItems(Index: Integer): IHtmlElement; stdcall;
+begin
+  Result := FList[Index];
+end;
+
+procedure TIHtmlElementList.SetItems(Index: Integer; const Value: IHtmlElement);
+begin
+  FList[Index] := Value;
+end;
+
+constructor TIHtmlElementList.Create();
+begin
+  FList := TList<IHtmlElement>.Create();
+end;
+
+destructor TIHtmlElementList.Destroy;
+begin
+  FList.Free;
+  Inherited Destroy;
+end;
+
+function TIHtmlElementList.IndexOf(Item: IHtmlElement): Integer;
+begin
+  Result := FList.IndexOf(Item);
 end;
 {$ENDIF}
 {$IFDEF CUSTOM_STRINGBUILDER}
@@ -828,7 +928,7 @@ begin
   ILen := Length(Value);
   if (ILen + FIndex) >= FBuffMax then
     ExpandBuffer(ILen + FIndex);
-  Move(Value[1], FBuffer[FIndex], SizeOf(Char) * ILen);
+  Move(Value[StrBaseIndex], FBuffer[FIndex], SizeOf(Char) * ILen);
   Inc(FIndex, ILen);
 end;
 
@@ -836,7 +936,7 @@ function TStringBuilder.ToString: string;
 begin
   FBuffer[FIndex] := #0;
   SetLength(Result, FIndex);
-  Move(FBuffer[0], Result[1], SizeOf(Char) * FIndex);
+  Move(FBuffer[0], Result[StrBaseIndex], SizeOf(Char) * FIndex);
 end;
 
 procedure TStringBuilder.Clear;
@@ -854,14 +954,22 @@ begin
 end;
 
 {$IF NOT Declared(CharInSet)}
+{$IF Declared(AnsiChar)}
 
 function CharInSet(C: AnsiChar; const CharSet: TSysCharSet): Boolean; overload;
 // inline;
 begin
   Result := C in CharSet;
 end;
+{$ENDIF}
 
-{$IFEND}
+function CharInSet(C: WideChar; const CharSet: TSysCharSet): Boolean; overload;
+// inline;
+begin
+  Result := C in CharSet;
+end;
+
+{$ENDIF}
 
 function TrimStr(ACharSet: TSysCharSet; const Str: string): string;
 var
@@ -869,7 +977,7 @@ var
 begin
   _begin := -1;
   _End := -1;
-  for I := 1 to Length(Str) do
+  for I := StrBaseIndex to Length(Str){$IF defined(CPUARM)} - 1{$ENDIF} do
   begin
     if not CharInSet(Str[I], ACharSet) then
     begin
@@ -881,7 +989,7 @@ begin
   if (_begin < 0) or (_End < 0) then
     Result := ''
   else
-    Result := Copy(Str, _begin, _End - _begin + 1);
+    Result := Str_cpy(Str, _begin, _End - _begin + 1);
 
 end;
 
@@ -895,22 +1003,22 @@ begin
   if Length(AStr) <= 0 then
     Exit;
 
-  I := 1;
-  L := 1;
+  I := StrBaseIndex;
+  L := StrBaseIndex;
   StrChar := #0;
-  while I <= Length(AStr) do
+  while I <= (Length(AStr){$IF defined(CPUARM)} - 1{$ENDIF}) do
   begin
     if CharInSet(AStr[I], ['''', '"']) then
       if StrChar = #0 then
-        StrChar := AStr[1]
-      else if StrChar = AStr[1] then
+        StrChar := AStr[StrBaseIndex]
+      else if StrChar = AStr[StrBaseIndex] then
         StrChar := #0;
     if StrChar = #0 then
       if CharInSet(AStr[I], ACharSet) then
       begin
         if I > L then
         begin
-          S := Copy(AStr, L, I - L);
+          S := Str_cpy(AStr, L, I - L);
           SetLength(Result, Length(Result) + 1);
           Result[Length(Result) - 1] := S;
         end;
@@ -920,7 +1028,7 @@ begin
   end;
   if (I > L) then
   begin
-    S := Copy(AStr, L, I - L);
+    S := Str_cpy(AStr, L, I - L);
     SetLength(Result, Length(Result) + 1);
     Result[Length(Result) - 1] := S;
   end;
@@ -960,7 +1068,7 @@ begin
   end;
   SetString(Result, oldP, P - oldP);
   if (stringChar <> #0) and (Length(Result) >= 2) then
-    Result := Copy(Result, 2, Length(Result) - 2);
+    Result := Str_cpy(Result, StrBaseIndex + 1, Length(Result) - 2);
 end;
 
 procedure _ParserAttrs(P: PChar; var Attrs: TAttributeDynArray);
@@ -1012,13 +1120,13 @@ end;
 function _aoEqual(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 begin
   Result := E.FAttributes.ContainsKey(Item.Key) and
-    (E.FAttributes.ValueOf(Item.Key) = Item.Value);
+    (E.FAttributes[Item.Key] = Item.Value);
 end;
 
 function _aoNotEqual(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
 begin
   Result := E.FAttributes.ContainsKey(Item.Key) and
-    (E.FAttributes.ValueOf(Item.Key) <> Item.Value);
+    (E.FAttributes[Item.Key] <> Item.Value);
 end;
 
 function _aoIncludeWord(const Item: TAttrSelectorItem; E: THtmlElement)
@@ -1031,7 +1139,7 @@ begin
   if not E.FAttributes.ContainsKey(Item.Key) then
     Exit;
   Result := True;
-  S := SplitStr(WhiteSpace, E.FAttributes.ValueOf(Item.Key));
+  S := SplitStr(WhiteSpace, E.FAttributes[Item.Key]);
   for I := Low(S) to High(S) do
     if S[I] = Item.Value then
       Exit;
@@ -1046,7 +1154,7 @@ begin
   Result := false;
   if not E.FAttributes.ContainsKey(Item.Key) then
     Exit;
-  S := SplitStr((WhiteSpace + ['_', '-']), E.FAttributes.ValueOf(Item.Key));
+  S := SplitStr((WhiteSpace + ['_', '-']), E.FAttributes[Item.Key]);
   Result := (Length(S) > 0) and (S[0] = Item.Value);
 end;
 
@@ -1057,10 +1165,10 @@ begin
   Result := false;
   if not E.FAttributes.ContainsKey(Item.Key) then
     Exit;
-  attr := E.FAttributes.ValueOf(Item.Key);
+  attr := E.FAttributes[Item.Key];
   Value := Item.Value;
   Result := (Length(attr) > Length(Value)) and
-    (Copy(attr, 1, Length(Value)) = Value);
+    (Str_cpy(attr, StrBaseIndex, Length(Value)) = Value);
 end;
 
 function _aoEnd(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
@@ -1070,10 +1178,10 @@ begin
   Result := false;
   if not E.FAttributes.ContainsKey(Item.Key) then
     Exit;
-  attr := E.FAttributes.ValueOf(Item.Key);
+  attr := E.FAttributes[Item.Key];
   Value := Item.Value;
   Result := (Length(attr) > Length(Value)) and
-    (Copy(attr, Length(attr) - Length(Value) + 1, Length(attr)) = Value);
+    (Str_cpy(attr, Length(attr) - Length(Value), Length(attr)) = Value);
 end;
 
 function _aoContain(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
@@ -1081,7 +1189,7 @@ begin
   Result := false;
   if not E.FAttributes.ContainsKey(Item.Key) then
     Exit;
-  Result := Pos(Item.Value, E.FAttributes.ValueOf(Item.Key)) > 0;
+  Result := str_Idx(Item.Value, E.FAttributes[Item.Key]) >= 0;
 end;
 
 const
@@ -1094,6 +1202,7 @@ function ConvertWhiteSpace(S: String): string; forward;
 function GetTagProperty(const TagName: string): Word; forward;
 function ParserCSSSelector(const Value: string): TCSSSelectorItemGroup; forward;
 
+[weak]
 procedure _ParserHTML(const Source: string; AElementList: THtmlElementList);
 var
   BeginLineNum, LineNum, BeginColNum, ColNum: Integer;
@@ -1150,7 +1259,7 @@ var
     oldP: PChar;
   begin
     oldP := P;
-    if Copy(P, 1, 4) = '<!--' then
+    if Str_cpy(P, StrBaseIndex, 4) = '<!--' then
     begin
       IncSrc(P, 5);
       while True do
@@ -1199,7 +1308,7 @@ var
     oldP := P;
     stringChar := #0;
     SkipBlank(P);
-    if Copy(P, 1, 4) = '<!--' then
+    if Str_cpy(P, StrBaseIndex, 4) = '<!--' then
     begin
       IncSrc(P, 5);
       while True do
@@ -1291,7 +1400,10 @@ var
 
 var
   ElementType: (EtUnknow, EtTag, EtDocType, EtText, EtComment);
-  ScrObj, Tag: THtmlElement;
+  [weak]
+  ScrObj: THtmlElement;
+  [weak]
+  Tag: THtmlElement;
   oldP, P: PChar;
   Tmp: string;
 begin
@@ -1417,12 +1529,14 @@ begin
       EtUnknow:
         begin
           DoError('LineNum:' + IntToStr(BeginLineNum) + '无法解析的内容:' +
-            Copy(oldP, 1, 100));
+            Str_cpy(oldP, StrBaseIndex, 100));
         end;
       EtDocType:
         begin
+
           Tag := THtmlElement.CreateAsDocType(nil, Tmp, BeginLineNum,
             BeginColNum);
+            //TODO:Android上Tag是nil????
           AElementList.Add(Tag);
         end;
       EtTag:
@@ -1477,9 +1591,9 @@ end;
 function BuildTree(ElementList: THtmlElementList): THtmlElement;
 var
   I, J: Integer;
-  [Weak]
+  [weak]
   E: THtmlElement;
-  [Weak]
+  [weak]
   T: THtmlElement;
   FoundIndex: Integer;
   TagProperty: Word;
@@ -1494,7 +1608,6 @@ begin
   begin
     E := ElementList[I];
     TagProperty := GetTagProperty(E.FTagName);
-
 
     // 空节点,往下找,如果下一个带Tag的节点不是它的关闭节点,那么自动关闭
     {
@@ -1568,6 +1681,7 @@ end;
 
 function ParserHTML(const Source: WideString): IHtmlElement; stdcall;
 var
+  [weak]
   ElementList: THtmlElementList;
 begin
   ElementList := THtmlElementList.Create;
@@ -1608,13 +1722,14 @@ begin
   FClosed := True;
   if FContent = '' then
     Exit;
-  if FContent[1] = '<' then
-    Delete(FContent, 1, 1);
+  if FContent[StrBaseIndex] = '<' then
+    FContent := Str_Del(FContent, StrBaseIndex, 1);
   if FContent = '' then
     Exit;
-  if FContent[Length(FContent)] = '>' then
-    Delete(FContent, Length(FContent), 1);
-  FContent := Trim(Copy(Trim(FContent), 9, Length(FContent)));
+  if FContent[Length(FContent){$IF defined(CPUARM)} - 1{$ENDIF}] = '>' then
+    FContent := Str_Del(FContent, Length(FContent){$IF defined(CPUARM)} -
+      1{$ENDIF}, 1);
+  FContent := Trim(Str_cpy(Trim(FContent), Length(FTagName), Length(FContent)));
 end;
 
 constructor THtmlElement.CreateAsScript(AOwner: THtmlElement; AText: string;
@@ -1648,23 +1763,23 @@ begin
   if AText = '' then
     Exit;
   // 去掉两头的<
-  if AText[1] = '<' then
-    Delete(AText, 1, 1);
+  if AText[StrBaseIndex] = '<' then
+    AText := Str_Del(AText, StrBaseIndex, 1);
 
   if AText = '' then
     Exit;
-  if AText[Length(AText)] = '>' then
-    Delete(AText, Length(AText), 1);
+  if AText[Length(AText){$IF defined(CPUARM)} - 1{$ENDIF}] = '>' then
+    AText := Str_Del(AText, Length(AText){$IF defined(CPUARM)} - 1{$ENDIF}, 1);
   // 检查是关闭节点,还是单个已经关闭的节点
   if AText = '' then
     Exit;
-  FClosed := AText[Length(AText)] = '/';
-  FIsCloseTag := AText[1] = '/';
+  FClosed := AText[Length(AText){$IF defined(CPUARM)} - 1{$ENDIF}] = '/';
+  FIsCloseTag := AText[StrBaseIndex] = '/';
 
   if FIsCloseTag then
-    Delete(AText, 1, 1);
+    AText := Str_Del(AText, StrBaseIndex, 1);
   if FClosed then
-    Delete(AText, Length(AText), 1);
+    AText := Str_Del(AText, Length(AText){$IF defined(CPUARM)} - 1{$ENDIF}, 1);
   //
   _ParserNodeItem(AText, FTagName, Attrs);
   for I := Low(Attrs) to High(Attrs) do
@@ -1729,7 +1844,9 @@ procedure THtmlElement._FindElements(AList: TIHtmlElementList;
   AOnlyInTopElement: Boolean);
 var
   I, J: Integer;
+  [weak]
   C: IHtmlElement;
+  [weak]
   E: THtmlElement;
 begin
   for I := 0 to FChildren.Count - 1 do
@@ -1757,6 +1874,7 @@ function THtmlElement.FindElements(ATagName: WideString;
 var
   LAttributes: TAttributeDynArray;
   I: Integer;
+  [weak]
   List: TIHtmlElementList;
   P: PChar;
   Attrs: string;
@@ -1832,6 +1950,7 @@ end;
 procedure THtmlElement._GetHtml(IncludeSelf: Boolean; Sb: TStringBuilder);
 var
   I: Integer;
+  [weak]
   E: THtmlElement;
 begin
   if IncludeSelf then
@@ -1849,6 +1968,7 @@ end;
 procedure THtmlElement._GetText(IncludeSelf: Boolean; Sb: TStringBuilder);
 var
   I: Integer;
+  [weak]
   E: THtmlElement;
 begin
   if IncludeSelf and (FTagName = '#TEXT') then
@@ -1885,7 +2005,10 @@ procedure THtmlElement._Select(Item: PCSSSelectorItem; Count: Integer;
 var
   f: Boolean;
   I, SelfIndex: Integer;
-  PE, E: THtmlElement;
+  [weak]
+  PE: THtmlElement;
+  [weak]
+  E: THtmlElement;
   Next: PCSSSelectorItem;
 begin
   f := _Filtered();
@@ -1983,12 +2106,13 @@ end;
 
 function THtmlElement.IsTagElement: Boolean;
 begin
-  Result := (Length(FTagName) > 0) and (FTagName[1] <> '#');
+  Result := (Length(FTagName) > 0) and (FTagName[StrBaseIndex] <> '#');
 end;
 
 function THtmlElement.SimpleCSSSelector(const selector: WideString)
   : IHtmlElementList;
 var
+  [weak]
   r: TIHtmlElementList;
 begin
   r := TIHtmlElementList.Create;
@@ -2075,7 +2199,7 @@ var
 
     if Length(Tmp) >= 1 then
     begin
-      case Tmp[1] of
+      case Tmp[StrBaseIndex] of
         '=':
           Result.AttrOperator := aoEqual;
         '!':
@@ -2117,7 +2241,8 @@ var
     end;
     SetString(Result.Value, oldP, P - oldP);
     if (stringChar <> #0) and (Length(Result.Value) >= 2) then
-      Result.Value := Copy(Result.Value, 2, Length(Result.Value) - 2);
+      Result.Value := Str_cpy(Result.Value, StrBaseIndex + 1,
+        Length(Result.Value) - 2);
     Result.Value := ConvertEntities(Result.Value);
     //
     SkipBlank(P);
@@ -2439,19 +2564,25 @@ var
   T: String;
   r: String;
 begin
-  I := 1;
-  while I < Length(S) do
+  I := StrBaseIndex;
+  while I < Length(S){$IF defined(CPUARM)} - 1{$ENDIF} do
   begin
     if S[I] = '&' then
     begin
-      T := Copy(S, I, 1000);
-      T := LowerCase(Copy(T, 1, Pos(';', T)));
-      Delete(S, I, Length(T));
-      if (Length(T) > 2) and (T[2] = '#') then
-        if (Length(T) > 3) and (T[3] = 'x') then
-          r := WideChar(StrToIntDef('$' + Copy(T, 4, Length(T) - 4), 33))
+      // &#x10;
+      T := Str_cpy(S, I, 1000);
+      T := LowerCase(Str_cpy(T, StrBaseIndex, str_Idx(';', T)
+{$IF defined(CPUARM)} + 1{$ENDIF}));
+      S := Str_Del(S, I, Length(T));
+      if (Length(T) > 2) and (T[StrBaseIndex + 1] = '#') then
+        if (Length(T) > 3) and (T[StrBaseIndex + 2] = 'x') then
+          r := WideChar(StrToIntDef('$' + Str_cpy(T, StrBaseIndex + 3,
+            Length(T) - (StrBaseIndex + 3)
+{$IF defined(CPUARM)} + 1{$ENDIF}), 33))
         else
-          r := WideChar(StrToIntDef(Copy(T, 3, Length(T) - 3), 0))
+          r := WideChar(StrToIntDef(Str_cpy(T, (StrBaseIndex + 2),
+            Length(T) - (StrBaseIndex + 2){$IF defined(CPUARM)} +
+            1{$ENDIF}), 0))
       else
       begin
         r := '';
@@ -2460,7 +2591,7 @@ begin
         else
           r := T;
       end;
-      Insert(r, S, I);
+      S := Str_Inst(S, I, r);
     end;
     Inc(I);
   end;
@@ -2475,7 +2606,7 @@ var
 begin
   Sb := TStringBuilder.Create;
   PreIssWhite := false;
-  for I := 1 to Length(S) do
+  for I := StrBaseIndex to Length(S){$IF defined(CPUARM)} - 1{$ENDIF} do
   begin
     ThisIsWhite := CharInSet(S[I], WhiteSpace);
     if ThisIsWhite then
@@ -2535,7 +2666,7 @@ begin
   if Length(S) <= 0 then
     Result := 0
   else
-    Result := Ord(S[1]);
+    Result := Ord(S[StrBaseIndex]);
 end;
 
 procedure Init();
@@ -2562,7 +2693,7 @@ begin
       S := GTagProperty[Key]
     else
       S := #0;
-    S[1] := Char(Ord(S[1]) or TpEmpty);
+    S[StrBaseIndex] := Char(Ord(S[StrBaseIndex]) or TpEmpty);
     GTagProperty.AddOrSetValue(Key, S);
   end;
 
@@ -2573,7 +2704,7 @@ begin
       S := GTagProperty[Key]
     else
       S := #0;
-    S[1] := Char(Ord(S[1]) or TpFormatAsInline);
+    S[StrBaseIndex] := Char(Ord(S[StrBaseIndex]) or TpFormatAsInline);
     GTagProperty.AddOrSetValue(Key[I], S);
   end;
   for I := low(PreserveWhitespaceTags) to high(PreserveWhitespaceTags) do
@@ -2583,7 +2714,7 @@ begin
       S := GTagProperty[Key]
     else
       S := #0;
-    S[1] := Char(Ord(S[1]) or TpPreserveWhitespace);
+    S[StrBaseIndex] := Char(Ord(S[StrBaseIndex]) or TpPreserveWhitespace);
     GTagProperty.AddOrSetValue(PreserveWhitespaceTags[I], S);
   end;
 end;
