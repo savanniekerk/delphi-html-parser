@@ -3,7 +3,7 @@ unit Unit7;
 interface
 
 uses
-  HtmlParser,
+  HtmlParser_XE3UP,
   System.SysUtils, System.Types, System.UITypes, System.Classes,
   System.Variants,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs,
