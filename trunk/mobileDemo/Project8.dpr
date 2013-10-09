@@ -4,7 +4,7 @@ uses
   System.StartUpCopy,
   FMX.Forms,
   Unit7 in 'Unit7.pas' {Form7},
-  HtmlParser in '..\HtmlParser.pas';
+  HtmlParser_XE3UP in '..\HtmlParser_XE3UP.pas';
 
 {$R *.res}
 
