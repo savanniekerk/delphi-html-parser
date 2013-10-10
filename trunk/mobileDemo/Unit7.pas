@@ -21,7 +21,6 @@ type
     procedure Button1Click(Sender: TObject);
   private
     { Private declarations }
-    [weak]
     FNodes: IHtmlElement;
   public
     { Public declarations }
