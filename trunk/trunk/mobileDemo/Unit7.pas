@@ -5,10 +5,10 @@ interface
 uses
   HtmlParser_XE3UP,
   System.SysUtils, System.Types, System.UITypes, System.Classes,
-  System.Variants,
+  System.Variants, FMX.Platform,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs,
   IdBaseComponent, IdComponent, IdTCPConnection, IdTCPClient, IdHTTP,
-  FMX.StdCtrls, FMX.Edit, FMX.Layouts, FMX.TreeView, FMX.Memo;
+  FMX.StdCtrls, FMX.Edit, FMX.Layouts, FMX.TreeView, FMX.Memo, FMX.Types;
 
 type
   TForm7 = class(TForm)
@@ -18,7 +18,9 @@ type
     Edit1: TEdit;
     Button1: TButton;
     Memo1: TMemo;
+    btn1: TButton;
     procedure Button1Click(Sender: TObject);
+    procedure btn1Click(Sender: TObject);
   private
     { Private declarations }
     FNodes: IHtmlElement;
@@ -55,6 +57,11 @@ begin
   end;
 end;
 
+procedure TForm7.btn1Click(Sender: TObject);
+begin
+  ShowMessage(Inttostr(FNodes.SimpleCSSSelector('div#wrapper').Count));
+end;
+
 procedure TForm7.Button1Click(Sender: TObject);
 var
   s: string;
@@ -63,12 +70,16 @@ begin
   IdHTTP1.Request.UserAgent := 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0';
   s := IdHTTP1.Get(Edit1.Text);
   Memo1.Lines.Text := s;
+  ShowMessage('下载网页完毕!');
   FNodes := ParserHTML(s);
+  ShowMessage('解析网页完毕!后面解析到Tree有点慢啊.');
   //
 
   root := TTreeViewItem.Create(TreeView1);
+  TreeView1.BeginUpdate;
   root.Parent := TreeView1;
   NodesToTree1(TreeView1, FNodes, root);
+  TreeView1.EndUpdate;
 end;
 
 end.

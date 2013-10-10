@@ -28,7 +28,7 @@ object Form7: TForm7
       Align = alClient
       TabOrder = 0
       Text = 'http://www.baidu.com'
-      Width = 311.000000000000000000
+      Width = 216.000000000000000000
       Height = 32.000000000000000000
       KillFocusByReturn = False
     end
@@ -41,6 +41,16 @@ object Form7: TForm7
       Trimming = ttCharacter
       Width = 73.000000000000000000
       OnClick = Button1Click
+    end
+    object btn1: TButton
+      Align = alRight
+      Height = 41.000000000000000000
+      Position.X = 216.000000000000000000
+      TabOrder = 2
+      Text = 'btn1'
+      Trimming = ttCharacter
+      Width = 95.000000000000000000
+      OnClick = btn1Click
     end
   end
   object Memo1: TMemo

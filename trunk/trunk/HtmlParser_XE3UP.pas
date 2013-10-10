@@ -12,6 +12,9 @@
 
   http://www.pockhero.com/
 
+  本版本只支持DelphiXE3之后的版本.如果用早期Delphi请使用HTMLParser.pas文件.
+  支持Windows,MacOSX,iOS,Android平台,完全去掉了对指针的使用.防止以后易博龙去掉
+  移动平台对指针的支持.
 }
 
 unit HtmlParser_XE3UP;
@@ -35,7 +38,7 @@ type
 
   IHtmlElement = interface
     ['{8C75239C-8CFA-499F-B115-7CEBEDFB421B}']
-    function GetOwner: IHtmlElement; stdcall;
+    // function GetOwner: IHtmlElement; stdcall;
     function GetTagName: WideString; safecall;
     function GetContent: WideString; safecall;
     function GetOrignal: WideString; safecall;
@@ -53,12 +56,6 @@ type
 
     // 属性是否存在
     function HasAttribute(AttributeName: WideString): Boolean; stdcall;
-    // 查找节点
-    { FindElements('Link','type="application/rss+xml"')
-      FindElements('','type="application/rss+xml"')
-    }
-    function FindElements(ATagName: WideString; AAttributes: WideString;
-      AOnlyInTopElement: Boolean): IHtmlElementList; stdcall;
     { 用CSS选择器语法查找Element,不支持"伪类"
       CSS Selector Style search,not support Pseudo-classes.
 
@@ -75,7 +72,7 @@ type
     property CloseTag: IHtmlElement read GetCloseTag;
     property Content: WideString read GetContent;
     property Orignal: WideString read GetOrignal;
-    property Owner: IHtmlElement read GetOwner;
+    // property Owner: IHtmlElement read GetOwner;
     // 获取元素在源代码中的位置
     property SourceLineNum: Integer read GetSourceLineNum;
     property SourceColNum: Integer read GetSourceColNum;
@@ -101,11 +98,12 @@ function ParserHTML(const Source: WideString): IHtmlElement; stdcall;
 implementation
 
 uses
-  SysUtils, generics.Collections, FMX.Dialogs;
+  SysUtils, generics.Collections;
 
 type
   TStringDictionary = TDictionary<string, string>;
   TPropDictionary = TDictionary<string, WORD>;
+  TStringDynArray = TArray<string>;
 
 const
   WhiteSpace = [' ', #13, #10, #9];
@@ -123,6 +121,34 @@ const
   tpInlineOrEmpty = tpInline or tpEmpty;
 
 type
+
+  TAttrOperator = (aoExist, aoEqual, aoNotEqual, aoIncludeWord, aoBeginWord,
+    aoBegin, aoEnd, aoContain);
+
+  PAttrSelectorItem = ^TAttrSelectorItem;
+
+  TAttrSelectorItem = record
+    Key: string;
+    AttrOperator: TAttrOperator;
+    Value: string;
+  end;
+
+  TSelectorItemRelation = (sirNONE, sirDescendant, sirChildren,
+    sirYoungerBrother, sirAllYoungerBrother);
+
+  PCSSSelectorItem = ^TCSSSelectorItem;
+
+  TCSSSelectorItem = record
+    Relation: TSelectorItemRelation;
+    szTag: string;
+    Attributes: array of TAttrSelectorItem;
+  end;
+
+  TCSSSelectorItems = array of TCSSSelectorItem;
+  PCSSSelectorItems = ^TCSSSelectorItems;
+  TCSSSelectorItemGroup = array of TCSSSelectorItems;
+
+  //
   TSourceContext = record
   private
     function GetCharOfCurrent(Index: Integer): Char; inline;
@@ -132,9 +158,6 @@ type
     LineNum: Integer;
     ColNum: Integer;
     CurrentChar: Char;
-{$IFDEF DEBUG}
-    currentCode: PChar;
-{$ENDIF}
     procedure IncSrc(); overload;
     procedure IncSrc(Step: Integer); overload;
     procedure setCode(const ACode: string);
@@ -153,13 +176,14 @@ type
 
   TAttributeDynArray = array of TAttributeItem;
 
-  THtmlElementList = TList<IHtmlElement>;
   TIHtmlElementList = class;
+  THtmlElement = class;
+  THtmlElementList = TList<THtmlElement>;
 
   THtmlElement = class(TInterfacedObject, IHtmlElement)
   protected
     // IHtmlElement
-    function GetOwner: IHtmlElement; stdcall;
+    // function GetOwner: IHtmlElement; stdcall;
     function GetTagName: WideString; safecall;
     function GetContent: WideString; safecall;
     function GetOrignal: WideString; safecall;
@@ -177,12 +201,6 @@ type
 
     // 属性是否存在
     function HasAttribute(AttributeName: WideString): Boolean; stdcall;
-    // 查找节点
-    { FindElements('Link','type="application/rss+xml"')
-      FindElements('','type="application/rss+xml"')
-    }
-    function FindElements(ATagName: WideString; AAttributes: WideString;
-      AOnlyInTopElement: Boolean): IHtmlElementList; stdcall;
     { 用CSS选择器语法查找Element,不支持"伪类"
       CSS Selector Style search,not support Pseudo-classes.
 
@@ -199,7 +217,7 @@ type
     property CloseTag: IHtmlElement read GetCloseTag;
     property Content: WideString read GetContent;
     property Orignal: WideString read GetOrignal;
-    property Owner: IHtmlElement read GetOwner;
+    // property Owner: IHtmlElement read GetOwner;
     // 获取元素在源代码中的位置
     property SourceLineNum: Integer read GetSourceLineNum;
     property SourceColNum: Integer read GetSourceColNum;
@@ -224,6 +242,12 @@ type
     //
     FAttributes: TStringDictionary;
     FChildren: TIHtmlElementList;
+    procedure _GetHtml(IncludeSelf: Boolean; Sb: TStringBuilder);
+    procedure _GetText(IncludeSelf: Boolean; Sb: TStringBuilder);
+    procedure _SimpleCSSSelector(const ItemGroup: TCSSSelectorItemGroup;
+      r: TIHtmlElementList);
+    procedure _Select(Item: PCSSSelectorItem; Count: Integer;
+      r: TIHtmlElementList; OnlyTopLevel: Boolean = false);
   public
     constructor Create(AOwner: THtmlElement; AText: string;
       ALine, ACol: Integer);
@@ -237,7 +261,7 @@ type
     function GetCount: Integer; stdcall;
 
   protected
-    FList: THtmlElementList;
+    FList: TList<IHtmlElement>;
     procedure SetItems(Index: Integer; const Value: IHtmlElement); inline;
     function Add(Value: IHtmlElement): Integer; inline;
     procedure Delete(Index: Integer); inline;
@@ -254,6 +278,156 @@ type
     property Count: Integer read GetCount;
   end;
 
+function SplitStr(ACharSet: TSysCharSet; AStr: string): TStringDynArray;
+var
+  L, I: Integer;
+  S: string;
+  StrChar: Char;
+begin
+  Result := nil;
+  if Length(AStr) <= 0 then
+    Exit;
+
+  I := Low(AStr);
+  L := Low(AStr);
+  StrChar := #0;
+  while I <= High(AStr) do
+  begin
+    if CharInSet(AStr[I], ['''', '"']) then
+      if StrChar = #0 then
+        StrChar := AStr[I]
+      else if StrChar = AStr[I] then
+        StrChar := #0;
+    // 不在字符串中,分隔符才生效
+    if StrChar = #0 then
+      if CharInSet(AStr[I], ACharSet) then
+      begin
+        if I > L then
+        begin
+          S := Copy(AStr, L{$IF (LowStrIndex = 0)} + 1{$ENDIF}, I - L);
+          SetLength(Result, Length(Result) + 1);
+          Result[Length(Result) - 1] := S;
+        end;
+        L := I + 1;
+      end;
+    Inc(I);
+  end;
+  if (I > L) then
+  begin
+    S := Copy(AStr, L{$IF (LowStrIndex = 0)} + 1{$ENDIF}, I - L);
+    SetLength(Result, Length(Result) + 1);
+    Result[Length(Result) - 1] := S;
+  end;
+end;
+
+function StrRight(const Value: string; Count: Integer): string;
+var
+  start: Integer;
+begin
+  start := Length(Value) - Count + 1;
+  if start <= 0 then
+    Result := Value
+  else
+    Result := Copy(Value, start, Count);
+end;
+
+function StrLeft(const Value: string; Count: Integer): string;
+begin
+  Result := Copy(Value, LowStrIndex, Count);
+end;
+
+
+// ComapreAttr
+
+function _aoExist(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+begin
+  Result := E.FAttributes.ContainsKey(Item.Key);
+end;
+
+function _aoEqual(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+begin
+  Result := E.FAttributes.ContainsKey(Item.Key) and
+    (E.FAttributes[Item.Key] = Item.Value);
+end;
+
+function _aoNotEqual(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+begin
+  Result := E.FAttributes.ContainsKey(Item.Key) and
+    (E.FAttributes[Item.Key] <> Item.Value);
+end;
+
+function _aoIncludeWord(const Item: TAttrSelectorItem; E: THtmlElement)
+  : Boolean;
+var
+  S: TStringDynArray;
+  I: Integer;
+begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
+  Result := True;
+  S := SplitStr(WhiteSpace, E.FAttributes[Item.Key]);
+  for I := Low(S) to High(S) do
+    if S[I] = Item.Value then
+      Exit;
+  Result := false;
+end;
+
+function _aoBeginWord(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+var
+  S: TStringDynArray;
+  I: Integer;
+begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
+  S := SplitStr((WhiteSpace + ['_', '-']), E.FAttributes[Item.Key]);
+  Result := (Length(S) > 0) and (S[0] = Item.Value);
+end;
+
+function _aoBegin(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+var
+  attr, Value: string;
+begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
+  attr := E.FAttributes[Item.Key];
+  Value := Item.Value;
+  Result := (Length(attr) > Length(Value)) and
+    (StrLeft(attr, Length(Value)) = Value);
+end;
+
+function _aoEnd(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+var
+  attr, Value: string;
+begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
+  attr := E.FAttributes[Item.Key];
+  Value := Item.Value;
+  Result := (Length(attr) > Length(Value)) and
+    (StrRight(attr, Length(Value)) = Value);
+end;
+
+function _aoContain(const Item: TAttrSelectorItem; E: THtmlElement): Boolean;
+begin
+  Result := false;
+  if not E.FAttributes.ContainsKey(Item.Key) then
+    Exit;
+  Result := Pos(Item.Value, E.FAttributes[Item.Key]) > 0;
+end;
+
+type
+  TFNCompareAttr = function(const Item: TAttrSelectorItem;
+    E: THtmlElement): Boolean;
+
+const
+  AttrCompareFuns: array [TAttrOperator] of TFNCompareAttr = (_aoExist,
+    _aoEqual, _aoNotEqual, _aoIncludeWord, _aoBeginWord, _aoBegin, _aoEnd,
+    _aoContain);
+
 function ConvertEntities(S: String): string; forward;
 function GetTagProperty(const TagName: string): WORD; forward;
 
@@ -262,7 +436,7 @@ begin
   raise Exception.Create(Msg);
 end;
 
-procedure _ParserAttrs(var sc : TSourceContext; var Attrs: TAttributeDynArray);
+procedure _ParserAttrs(var sc: TSourceContext; var Attrs: TAttributeDynArray);
 var
   Key, Value: string;
 begin
@@ -351,7 +525,7 @@ end;
 function CreateTagElement(AOwner: THtmlElement; AText: string;
   ALine, ACol: Integer): THtmlElement;
 var
-  Strs: TArray<String>;
+  Strs: TStringDynArray;
   I: Integer;
   Attrs: TAttributeDynArray;
 begin
@@ -362,23 +536,25 @@ begin
     if AText = '' then
       Exit;
     // 去掉两头的<
-    if AText[1] = '<' then
-      Delete(AText, 1, 1);
+
+    if AText[Low(AText)] = '<' then
+      AText := StrRight(AText, Length(AText) - 1);
 
     if AText = '' then
       Exit;
-    if AText[Length(AText)] = '>' then
-      Delete(AText, Length(AText), 1);
+    if AText[High(AText)] = '>' then
+      AText := StrLeft(AText, Length(AText) - 1);
     // 检查是关闭节点,还是单个已经关闭的节点
     if AText = '' then
       Exit;
-    FClosed := AText[Length(AText)] = '/';
-    FIsCloseTag := AText[1] = '/';
+    FClosed := AText[High(AText)] = '/';
+
+    FIsCloseTag := AText[LowStrIndex] = '/';
 
     if FIsCloseTag then
-      Delete(AText, 1, 1);
+      AText := StrRight(AText, Length(AText) - 1);
     if FClosed then
-      Delete(AText, Length(AText), 1);
+      AText := StrLeft(AText, Length(AText) - 1);
     //
     _ParserNodeItem(AText, FTagName, Attrs);
     for I := Low(Attrs) to High(Attrs) do
@@ -570,6 +746,8 @@ begin
     OldCodeIndex := sc.CodeIndex;
     BeginLineNum := sc.LineNum;
     BeginColNum := sc.ColNum;
+    if sc.CurrentChar = #0 then
+      Break;
     // "<"开头的就是Tag之类的
     if sc.CurrentChar = '<' then
     begin
@@ -681,7 +859,7 @@ begin
       tmp := sc.subStr(OldCodeIndex, sc.CodeIndex - OldCodeIndex);
     end;
     //
-
+    // ShowMessage(sc.subStr(30));
     case ElementType of
       EtUnknow:
         begin
@@ -746,7 +924,7 @@ var
   E: THtmlElement;
   T: THtmlElement;
   FoundIndex: Integer;
-  TagProperty: Word;
+  TagProperty: WORD;
 begin
   Result := THtmlElement.Create(nil, '', 0, 0);
   Result.FTagName := '#DOCUMENT';
@@ -758,7 +936,6 @@ begin
   begin
     E := ElementList[I] as THtmlElement;
     TagProperty := GetTagProperty(E.FTagName);
-
 
     // 空节点,往下找,如果下一个带Tag的节点不是它的关闭节点,那么自动关闭
     FoundIndex := -1;
@@ -782,7 +959,7 @@ begin
           T := ElementList[J] as THtmlElement;
           T.FClosed := True;
         end;
-        THtmlElement(ElementList[FoundIndex]).FCloseTag := E;
+        (ElementList[FoundIndex] as THtmlElement).FCloseTag := E;
       end
       else
       begin
@@ -798,7 +975,7 @@ begin
         T := ElementList[J] as THtmlElement;
         if not T.FClosed then
         begin
-          if ((GetTagProperty(T.FTagName) and TpEmpty) <> 0) then
+          if ((GetTagProperty(T.FTagName) and tpEmpty) <> 0) then
             T.FClosed := True
           else
           begin
@@ -1100,6 +1277,242 @@ begin
     Exit;
 end;
 
+function ParserCSSSelector(const Value: string): TCSSSelectorItemGroup;
+var
+  sc: TSourceContext;
+
+  function AddAttr(var Item: TCSSSelectorItem): PAttrSelectorItem;
+  begin
+    SetLength(Item.Attributes, Length(Item.Attributes) + 1);
+    Result := @Item.Attributes[Length(Item.Attributes) - 1];
+  end;
+
+  function ParserAttr(): TAttrSelectorItem;
+  var
+    oldIndex: Integer;
+    tmp: string;
+    stringChar: Char;
+  begin
+    sc.IncSrc(); // [
+    Result.Key := '';
+    Result.AttrOperator := aoEqual;
+    Result.Value := '';
+    // Key
+    sc.SkipBlank();
+    oldIndex := sc.CodeIndex;
+    while not CharInSet(sc.CurrentChar,
+      (WhiteSpace + OperatorChar + [']', #0])) do
+      sc.IncSrc();
+    Result.Key := sc.subStr(oldIndex, sc.CodeIndex - oldIndex);
+    Result.Key := LowerCase(Result.Key);
+    // Operator
+    sc.SkipBlank();
+    oldIndex := sc.CodeIndex;
+    case sc.CurrentChar of
+      '=', '!', '*', '~', '|', '^', '$':
+        begin
+          sc.IncSrc;
+          if sc.CurrentChar = '=' then
+            sc.IncSrc;
+        end;
+      ']':
+        begin
+          Result.AttrOperator := aoExist;
+          sc.IncSrc;
+          Exit;
+        end;
+    else
+      begin
+        DoError(Format('无法解析CSS Attribute操作符[%d,%d]', [sc.LineNum, sc.ColNum]));
+      end;
+    end;
+    tmp := sc.subStr(oldIndex, sc.CodeIndex - oldIndex);
+
+    if Length(tmp) >= 1 then
+    begin
+      case tmp[LowStrIndex] of
+        '=':
+          Result.AttrOperator := aoEqual;
+        '!':
+          Result.AttrOperator := aoNotEqual;
+        '*':
+          Result.AttrOperator := aoContain;
+        '~':
+          Result.AttrOperator := aoIncludeWord;
+        '|':
+          Result.AttrOperator := aoBeginWord;
+        '^':
+          Result.AttrOperator := aoBegin;
+        '$':
+          Result.AttrOperator := aoEnd;
+      end;
+    end;
+
+    // Value
+    sc.SkipBlank();
+    oldIndex := sc.CodeIndex;
+    if CharInSet(sc.CurrentChar, ['"', '''']) then
+      stringChar := sc.CurrentChar
+    else
+      stringChar := #0;
+    sc.IncSrc();
+    while True do
+    begin
+      if stringChar = #0 then
+      begin
+        if CharInSet(sc.CurrentChar, (WhiteSpace + [#0, ']'])) then
+          Break;
+      end
+      else if (sc.CurrentChar = stringChar) then
+      begin
+        sc.IncSrc();
+        Break;
+      end;
+      sc.IncSrc();
+    end;
+    Result.Value := sc.subStr(oldIndex, sc.CodeIndex - oldIndex);
+    // SetString(Result.Value, oldP, P - oldP);
+    if (stringChar <> #0) and (Length(Result.Value) >= 2) then
+      Result.Value := Copy(Result.Value, 2, Length(Result.Value) - 2);
+    Result.Value := ConvertEntities(Result.Value);
+    //
+    sc.SkipBlank();
+    if sc.CurrentChar = ']' then
+      sc.IncSrc
+    else
+      DoError(Format('无法解析Attribute值[%d,%d]', [sc.LineNum, sc.ColNum]));
+
+  end;
+
+  procedure ParserItem(var Item: TCSSSelectorItem);
+  var
+    tmp: string;
+    pAttr: PAttrSelectorItem;
+  begin
+    sc.SkipBlank();
+    while True do
+    begin
+      case sc.CurrentChar of
+        #0, ',', ' ':
+          Break;
+        '.': // class
+          begin
+            sc.IncSrc();
+            pAttr := AddAttr(Item);
+            pAttr^.Key := 'class';
+            pAttr^.AttrOperator := aoIncludeWord;
+            pAttr^.Value :=
+              sc.ReadStr((WhiteSpace + OperatorChar + ['[', ']', '"', '''', ',',
+              '.', '#', #0]));
+          end;
+        '#': // id
+          begin
+            sc.IncSrc();
+            pAttr := AddAttr(Item);
+            pAttr^.Key := 'id';
+            pAttr^.AttrOperator := aoEqual;
+            pAttr^.Value :=
+              sc.ReadStr((WhiteSpace + OperatorChar + ['[', ']', '"', '''', ',',
+              '.', '#', #0]));
+          end;
+        '[': // attribute
+          begin
+            pAttr := AddAttr(Item);
+            pAttr^ := ParserAttr();
+          end;
+        '/':
+          begin
+            sc.IncSrc();
+            if sc.CurrentChar = '*' then // /**/
+            begin
+              sc.IncSrc();
+              sc.IncSrc();
+              while True do
+              begin
+                if (sc.CurrentChar = '/') and (sc.charOfCurrent[-1] = '*') then
+                begin
+                  sc.IncSrc;
+                  Break;
+                end;
+                sc.IncSrc;
+              end;
+            end;
+          end;
+      else
+        begin
+          Item.szTag :=
+            UpperCase(sc.ReadStr((WhiteSpace + ['[', ']', '"', '''', ',', '.',
+            '#', #0])));
+        end;
+      end;
+    end;
+  end;
+
+  function AddItems(var Group: TCSSSelectorItemGroup): PCSSSelectorItems;
+  begin
+    SetLength(Group, Length(Group) + 1);
+    Result := @Group[Length(Group) - 1];
+  end;
+
+  function AddItem(var Items: TCSSSelectorItems): PCSSSelectorItem;
+  begin
+    SetLength(Items, Length(Items) + 1);
+    Result := @Items[Length(Items) - 1];
+    Result^.Relation := sirNONE;
+  end;
+
+var
+  // oldP, P: PChar;
+  Tag: string;
+  pitems: PCSSSelectorItems;
+  pItem: PCSSSelectorItem;
+begin
+  sc.setCode(Value);
+  //
+  pitems := AddItems(Result);
+  pItem := AddItem(pitems^);
+  while True do
+  begin
+    sc.SkipBlank;
+    ParserItem(pItem^);
+    sc.SkipBlank;
+    case sc.CurrentChar of
+      ',':
+        begin
+          sc.IncSrc();
+          pitems := AddItems(Result);
+          pItem := AddItem(pitems^);
+        end;
+      '>':
+        begin
+          sc.IncSrc();
+          pItem := AddItem(pitems^);
+          pItem^.Relation := sirChildren;
+        end;
+      '+':
+        begin
+          sc.IncSrc();
+          pItem := AddItem(pitems^);
+          pItem^.Relation := sirYoungerBrother;
+        end;
+      '~':
+        begin
+          sc.IncSrc();
+          pItem := AddItem(pitems^);
+          pItem^.Relation := sirAllYoungerBrother;
+        end;
+      #0:
+        Break;
+    else
+      begin
+        pItem := AddItem(pitems^);
+        pItem^.Relation := sirDescendant;
+      end;
+    end;
+
+  end;
+end;
+
 procedure Init();
 var
   I: Integer;
@@ -1176,7 +1589,7 @@ end;
 constructor TIHtmlElementList.Create;
 begin
   Inherited Create;
-  FList := THtmlElementList.Create;
+  FList := TList<IHtmlElement>.Create;
 end;
 
 procedure TIHtmlElementList.Delete(Index: Integer);
@@ -1232,90 +1645,231 @@ begin
 end;
 
 function THtmlElement.EnumAttributeNames(Index: Integer): WideString;
+var
+  Attrs: TStringDynArray;
 begin
-
-end;
-
-function THtmlElement.FindElements(ATagName, AAttributes: WideString;
-  AOnlyInTopElement: Boolean): IHtmlElementList;
-begin
-
+  Result := '';
+  Attrs := FAttributes.Keys.ToArray;
+  if Index < Length(Attrs) then
+    Result := Attrs[Index];
 end;
 
 function THtmlElement.GetAttributes(Key: WideString): WideString;
 begin
-
+  Result := '';
+  Key := LowerCase(Key);
+  if FAttributes.ContainsKey(Key) then
+    Result := FAttributes[Key];
 end;
 
 function THtmlElement.GetChildren(Index: Integer): IHtmlElement;
 begin
-
+  Result := FChildren[index];
 end;
 
 function THtmlElement.GetChildrenCount: Integer;
 begin
-
+  Result := FChildren.Count;
 end;
 
 function THtmlElement.GetCloseTag: IHtmlElement;
 begin
-
+  Result := FCloseTag;
 end;
 
 function THtmlElement.GetContent: WideString;
 begin
+  Result := FContent;
+end;
 
+procedure THtmlElement._GetHtml(IncludeSelf: Boolean; Sb: TStringBuilder);
+var
+  I: Integer;
+  E: THtmlElement;
+begin
+  if IncludeSelf then
+    Sb.Append(FOrignal);
+
+  for I := 0 to FChildren.Count - 1 do
+  begin
+    E := FChildren[I] as THtmlElement;
+    E._GetHtml(True, Sb);
+  end;
+  if IncludeSelf and (FCloseTag <> nil) then
+    (FCloseTag as THtmlElement)._GetHtml(True, Sb);
+end;
+
+procedure THtmlElement._GetText(IncludeSelf: Boolean; Sb: TStringBuilder);
+var
+  I: Integer;
+  E: THtmlElement;
+begin
+  if IncludeSelf and (FTagName = '#TEXT') then
+  begin
+    Sb.Append(FContent);
+  end;
+
+  for I := 0 to FChildren.Count - 1 do
+  begin
+    E := FChildren[I] as THtmlElement;
+    E._GetText(True, Sb);
+  end;
+end;
+
+procedure THtmlElement._Select(Item: PCSSSelectorItem; Count: Integer;
+  r: TIHtmlElementList; OnlyTopLevel: Boolean);
+
+  function _Filtered(): Boolean;
+  var
+    I: Integer;
+  begin
+    Result := false;
+    if (Item^.szTag = '') or (Item^.szTag = '*') or (Item^.szTag = FTagName)
+    then
+    begin
+      for I := Low(Item^.Attributes) to High(Item^.Attributes) do
+        if not AttrCompareFuns[Item^.Attributes[I].AttrOperator]
+          (Item^.Attributes[I], Self) then
+          Exit;
+      Result := True;
+    end;
+  end;
+
+var
+  f: Boolean;
+  I, SelfIndex: Integer;
+  PE, E: THtmlElement;
+  Next: PCSSSelectorItem;
+begin
+  //ShowMessage(item^.szTag);
+  //ShowMessage(item^.Attributes[0].Key + ' ' + item^.Attributes[0].Value);
+  f := _Filtered();
+  if f then
+  begin
+    if (Count = 1) then
+    begin
+      if (r.IndexOf(Self as IHtmlElement) < 0) then
+        r.Add(Self as IHtmlElement);
+    end
+    else if Count > 1 then
+    begin
+      Next := Item;
+      Inc(Next);
+      PE := Self.FOwner;
+      if PE = nil then
+        SelfIndex := -1
+      else
+        SelfIndex := PE.FChildren.IndexOf(Self as IHtmlElement);
+
+      case Next^.Relation of
+        sirDescendant, sirChildren:
+          begin
+            for I := 0 to FChildren.Count - 1 do
+            begin
+              E := FChildren[I] as THtmlElement;
+              E._Select(Next, Count - 1, r, Next^.Relation = sirChildren);
+            end;
+          end;
+        sirAllYoungerBrother, sirYoungerBrother:
+          begin
+            if (PE <> nil) and (SelfIndex >= 0) then
+              for I := (SelfIndex + 1) to PE.FChildren.Count - 1 do
+              begin
+                E := PE.FChildren[I] as THtmlElement;
+                if (Length(E.FTagName) = 0) or (E.FTagName[LowStrIndex] <> '#')
+                then
+                begin
+                  E._Select(Next, Count - 1, r, True);
+                  if (Next^.Relation = sirYoungerBrother) then
+                    Break;
+                end;
+              end;
+          end;
+      end;
+    end;
+  end;
+  if not OnlyTopLevel then
+    for I := 0 to FChildren.Count - 1 do
+    begin
+      E := FChildren[I] as THtmlElement;
+      E._Select(Item, Count, r);
+    end;
+end;
+
+procedure THtmlElement._SimpleCSSSelector(const ItemGroup
+  : TCSSSelectorItemGroup; r: TIHtmlElementList);
+var
+  I: Integer;
+begin
+  for I := Low(ItemGroup) to High(ItemGroup) do
+  begin
+    _Select(@ItemGroup[I][0], Length(ItemGroup[I]), r);
+  end;
 end;
 
 function THtmlElement.GetInnerHtml: WideString;
+var
+  Sb: TStringBuilder;
 begin
-
+  Sb := TStringBuilder.Create;
+  _GetHtml(false, Sb);
+  Result := Sb.ToString;
+  Sb.Free;
 end;
 
 function THtmlElement.GetInnerText: WideString;
+var
+  Sb: TStringBuilder;
 begin
-
+  Sb := TStringBuilder.Create;
+  _GetText(True, Sb);
+  Result := Sb.ToString;
+  Sb.Free;
 end;
 
 function THtmlElement.GetOrignal: WideString;
 begin
-
+  Result := FOrignal;
 end;
 
 function THtmlElement.GetOuterHtml: WideString;
+var
+  Sb: TStringBuilder;
 begin
-
-end;
-
-function THtmlElement.GetOwner: IHtmlElement;
-begin
-
+  Sb := TStringBuilder.Create;
+  _GetHtml(True, Sb);
+  Result := Sb.ToString;
+  Sb.Free;
 end;
 
 function THtmlElement.GetSourceColNum: Integer;
 begin
-
+  Result := FSourceCol;
 end;
 
 function THtmlElement.GetSourceLineNum: Integer;
 begin
-
+  Result := FSourceLine;
 end;
 
 function THtmlElement.GetTagName: WideString;
 begin
-
+  Result := FTagName;
 end;
 
 function THtmlElement.HasAttribute(AttributeName: WideString): Boolean;
 begin
-
+  Result := FAttributes.ContainsKey(LowerCase(AttributeName));
 end;
 
 function THtmlElement.SimpleCSSSelector(const selector: WideString)
   : IHtmlElementList;
+var
+  r: TIHtmlElementList;
 begin
-
+  r := TIHtmlElementList.Create;
+  _SimpleCSSSelector(ParserCSSSelector(selector), r);
+  Result := r as IHtmlElementList;
 end;
 
 { TSourceContext }
@@ -1358,7 +1912,7 @@ begin
   end;
   Result := subStr(oldIndex, CodeIndex - oldIndex);
   if (stringChar <> #0) and (Length(Result) >= 2) then
-    Result := subStr(LowStrIndex + 1, Length(Result) - 2);
+    Result := System.Copy(Result, 2, Length(Result) - 2);
 end;
 
 function TSourceContext.GetCharOfCurrent(Index: Integer): Char;
@@ -1377,9 +1931,6 @@ begin
     Inc(ColNum);
   Inc(CodeIndex);
   CurrentChar := Code[CodeIndex];
-{$IFDEF DEBUG}
-  currentCode := PChar(@Code[CodeIndex]);
-{$ENDIF}
 end;
 
 procedure TSourceContext.IncSrc(Step: Integer);
@@ -1405,9 +1956,6 @@ begin
   if Length(ACode) > 0 then
   begin
     CurrentChar := Code[CodeIndex];
-{$IFDEF DEBUG}
-    currentCode := PChar(@Code[CodeIndex]);
-{$ENDIF}
   end;
 end;
 
