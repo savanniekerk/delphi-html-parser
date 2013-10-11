@@ -3,7 +3,7 @@ unit Unit7;
 interface
 
 uses
-  HtmlParser_XE3UP,
+  HtmlParser_XE3UP, System.DateUtils,
   System.SysUtils, System.Types, System.UITypes, System.Classes,
   System.Variants, FMX.Platform,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.Graphics, FMX.Dialogs,
@@ -37,7 +37,7 @@ implementation
 {$R *.fmx}
 
 procedure NodesToTree1(ATreeView: TTreeView; ANode: IHtmlElement;
-  AParentNode: TTreeViewItem);
+  AParentNode: TFmxObject);
 var
   i: Integer;
   Node: TTreeViewItem;
@@ -47,6 +47,7 @@ begin
   Node := TTreeViewItem.Create(AParentNode);
   Node.Parent := AParentNode;
   Node.Text := Format('[%d]%s', [ANode.GetSourceLineNum, ANode.TagName]);
+  Node.Tag := Nativeint(ANode);
   m := ANode.ChildrenCount - 1;
   // if m > 1000 then
   // m := 1000;
@@ -59,36 +60,32 @@ begin
 end;
 
 procedure TForm7.btn1Click(Sender: TObject);
-var
-  ss: string;
 begin
-  // ShowMessage(Inttostr(FNodes.SimpleCSSSelector('div#wrapper').Count));
-  ss := FNodes.InnerHtml;
-
-
-  if FSource = ss then
-    ShowMessage('一样');
+  ShowMessage(Format('按条件找到%d个元素',[FNodes.SimpleCSSSelector('div[id="ftCon"] a#seth').Count]));
 end;
 
 procedure TForm7.Button1Click(Sender: TObject);
 var
-  root: TTreeViewItem;
+  t1, t2 : TDateTime;
 begin
+
   IdHTTP1.Request.UserAgent :=
     'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:23.0) Gecko/20100101 Firefox/23.0';
   FSource := StrPas(PChar(IdHTTP1.Get(Edit1.Text)));
   Memo1.Lines.Text := FSource;
   ShowMessage('下载网页完毕!');
+  t1 := Now;
   FNodes := ParserHTML(FSource);
-  ShowMessage('解析网页完毕!后面解析到Tree有点慢啊.');
+  t2 := Now;
+
+  ShowMessage(Format('解析网页完毕[%d]毫秒!后面解析到Tree有点慢啊.',[MilliSecondsBetween(t1,t2)]));
   //
 
-  root := TTreeViewItem.Create(TreeView1);
   TreeView1.BeginUpdate;
   TreeView1.Clear;
-  root.Parent := TreeView1;
-  NodesToTree1(TreeView1, FNodes, root);
+  NodesToTree1(TreeView1, FNodes, TreeView1);
   TreeView1.EndUpdate;
 end;
+
 
 end.
