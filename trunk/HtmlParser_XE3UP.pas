@@ -15,6 +15,8 @@
   本版本只支持DelphiXE3之后的版本.如果用早期Delphi请使用HTMLParser.pas文件.
   支持Windows,MacOSX,iOS,Android平台,完全去掉了对指针的使用.防止以后易博龙去掉
   移动平台对指针的支持.
+
+  脱离了对旧版本的支持,甩掉包袱开发起来真的很爽!
 }
 
 unit HtmlParser_XE3UP;
@@ -26,11 +28,14 @@ interface
 {$ENDIF}
 
 const
-  LowStrIndex = Low(string); // 移动平台=0,Windows平台=1
+  LowStrIndex = Low(string); // 移动平台=0,个人电脑平台=1
 
 type
 
 {$IFNDEF MSWINDOWS}
+  { 接口使用WideString是为了可以给例如C++,VB等语言使用.
+    但是如果离开了Windows平台,其他平台是没有WideString这个COM的数据类型的.
+  }
   WideString = String;
 {$ENDIF}
   IHtmlElement = interface;
@@ -158,6 +163,9 @@ type
     LineNum: Integer;
     ColNum: Integer;
     CurrentChar: Char;
+{$IFDEF DEBUG}
+    currentCode : PChar;
+{$ENDIF}
     procedure IncSrc(); overload;
     procedure IncSrc(Step: Integer); overload;
     procedure setCode(const ACode: string);
@@ -569,7 +577,18 @@ begin
   Result := THtmlElement.Create(AOwner, AText, ALine, ACol);
   with Result do
   begin
-
+    FContent := ConvertEntities(AText);
+    FTagName := '#DOCTYPE';
+    FClosed := True;
+    if FContent = '' then
+      Exit;
+    if FContent[1] = '<' then
+      Delete(FContent, 1, 1);
+    if FContent = '' then
+      Exit;
+    if FContent[Length(FContent)] = '>' then
+      Delete(FContent, Length(FContent), 1);
+    FContent := Trim(Copy(Trim(FContent), 9, Length(FContent)));
   end;
 end;
 
@@ -581,11 +600,17 @@ var
   function IsEndOfTag(TagName: string): Boolean;
   begin
     Result := false;
+    if sc.charOfCurrent[1] = '/' then
+    begin
+      Result := UpperCase(sc.subStr(sc.CodeIndex + 2, Length(TagName))) = UpperCase(TagName);
+    end;
+    {
     sc.IncSrc;
     if sc.CurrentChar <> '/' then
       Exit;
     sc.IncSrc;
     Result := UpperCase(sc.PeekStr()) = UpperCase(TagName);
+    }
   end;
 
   function ParserStyleData(): string;
@@ -1462,7 +1487,6 @@ var
   end;
 
 var
-  // oldP, P: PChar;
   Tag: string;
   pitems: PCSSSelectorItems;
   pItem: PCSSSelectorItem;
@@ -1741,8 +1765,8 @@ var
   PE, E: THtmlElement;
   Next: PCSSSelectorItem;
 begin
-  //ShowMessage(item^.szTag);
-  //ShowMessage(item^.Attributes[0].Key + ' ' + item^.Attributes[0].Value);
+  // ShowMessage(item^.szTag);
+  // ShowMessage(item^.Attributes[0].Key + ' ' + item^.Attributes[0].Value);
   f := _Filtered();
   if f then
   begin
@@ -1931,6 +1955,9 @@ begin
     Inc(ColNum);
   Inc(CodeIndex);
   CurrentChar := Code[CodeIndex];
+{$IFDEF DEBUG}
+    currentCode := PChar(@Code[CodeIndex]);
+{$ENDIF}
 end;
 
 procedure TSourceContext.IncSrc(Step: Integer);
@@ -1956,7 +1983,11 @@ begin
   if Length(ACode) > 0 then
   begin
     CurrentChar := Code[CodeIndex];
+{$IFDEF DEBUG}
+    currentCode := PChar(@Code[CodeIndex]);
+{$ENDIF}
   end;
+
 end;
 
 function TSourceContext.PeekStr(Index: Integer): string;

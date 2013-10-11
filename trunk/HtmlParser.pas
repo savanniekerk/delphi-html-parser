@@ -17,8 +17,6 @@ unit HtmlParser;
 
 interface
 
-uses
-  SysUtils; // , generics.Collections;
 
 type
 {$IFNDEF MSWINDOWS}
@@ -99,6 +97,8 @@ function ParserHTML(const Source: WideString): IHtmlElement; stdcall;
 
 implementation
 
+uses
+  SysUtils; // , generics.Collections;
 {$IF NOT Declared(TStringBuilder)}
 {$DEFINE CUSTOM_STRINGBUILDER}
 {$IFEND}
