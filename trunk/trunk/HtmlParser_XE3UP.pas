@@ -164,17 +164,17 @@ type
     ColNum: Integer;
     CurrentChar: Char;
 {$IFDEF DEBUG}
-    currentCode : PChar;
+    currentCode: PChar;
 {$ENDIF}
-    procedure IncSrc(); overload;
-    procedure IncSrc(Step: Integer); overload;
-    procedure setCode(const ACode: string);
-    function ReadStr(UntilChars: TSysCharSet): string;
-    function PeekStr(Index: Integer): string; overload;
-    function PeekStr(): string; overload;
-    function subStr(Index, Count: Integer): string; overload;
-    function subStr(Count: Integer): string; overload;
-    procedure SkipBlank();
+    procedure IncSrc(); overload; inline;
+    procedure IncSrc(Step: Integer); overload; inline;
+    procedure setCode(const ACode: string); inline;
+    function ReadStr(UntilChars: TSysCharSet): string; inline;
+    function PeekStr(Index: Integer): string; overload; inline;
+    function PeekStr(): string; overload; inline;
+    function subStr(Index, Count: Integer): string; overload; inline;
+    function subStr(Count: Integer): string; overload; inline;
+    procedure SkipBlank(); inline;
     property charOfCurrent[Index: Integer]: Char read GetCharOfCurrent;
   end;
 
@@ -182,7 +182,7 @@ type
     Key, Value: string;
   end;
 
-  TAttributeDynArray = array of TAttributeItem;
+  TAttributeDynArray = TArray<TAttributeItem>;
 
   TIHtmlElementList = class;
   THtmlElement = class;
@@ -446,7 +446,7 @@ end;
 
 procedure _ParserAttrs(var sc: TSourceContext; var Attrs: TAttributeDynArray);
 var
-  Key, Value: string;
+  Item: TAttributeItem;
 begin
   SetLength(Attrs, 0);
   while True do
@@ -454,18 +454,17 @@ begin
     sc.SkipBlank();
     if sc.CurrentChar = #0 then
       Break;
-    Key := sc.ReadStr((WhiteSpace + [#0, '=']));
-    Value := '';
+    Item.Key := sc.ReadStr((WhiteSpace + [#0, '=']));
+    Item.Value := '';
     sc.SkipBlank;
     if sc.CurrentChar = '=' then
     begin
       sc.IncSrc;
       sc.SkipBlank;
-      Value := sc.ReadStr((WhiteSpace + [#0]));
+      Item.Value := sc.ReadStr((WhiteSpace + [#0]));
     end;
     SetLength(Attrs, Length(Attrs) + 1);
-    Attrs[Length(Attrs) - 1].Key := Key;
-    Attrs[Length(Attrs) - 1].Value := Value;
+    Attrs[Length(Attrs) - 1] := Item;
   end;
 end;
 
@@ -602,14 +601,15 @@ var
     Result := false;
     if sc.charOfCurrent[1] = '/' then
     begin
-      Result := UpperCase(sc.subStr(sc.CodeIndex + 2, Length(TagName))) = UpperCase(TagName);
+      Result := UpperCase(sc.subStr(sc.CodeIndex + 2, Length(TagName)))
+        = UpperCase(TagName);
     end;
     {
-    sc.IncSrc;
-    if sc.CurrentChar <> '/' then
+      sc.IncSrc;
+      if sc.CurrentChar <> '/' then
       Exit;
-    sc.IncSrc;
-    Result := UpperCase(sc.PeekStr()) = UpperCase(TagName);
+      sc.IncSrc;
+      Result := UpperCase(sc.PeekStr()) = UpperCase(TagName);
     }
   end;
 
@@ -1201,38 +1201,89 @@ const
     (Key: '&lsaquo;'; Value: WideChar(8249)), (Key: '&rsaquo;';
     Value: WideChar(8250)), (Key: '&euro;'; Value: WideChar(8364)));
 
+function HexToChar(Value: String): Char;
+var
+  I: Integer;
+  W: WORD;
+begin
+  W := 0;
+  for I := Low(Value) to High(Value) do
+  begin
+    case Value[I] of
+      '0' .. '9':
+        W := (W shl 4) or (ord(Value[I]) - ord('0'));
+      'a' .. 'f':
+        W := (W shl 4) or (ord(Value[I]) - ord('a') + 10);
+      'A' .. 'F':
+        W := (W shl 4) or (ord(Value[I]) - ord('A') + 10);
+    else
+      W := 0;
+    end;
+  end;
+  Result := Char(W);
+end;
+
+function DecToChar(Value: String): Char;
+var
+  I: Integer;
+  W: WORD;
+begin
+  W := 0;
+  for I := Low(Value) to High(Value) do
+  begin
+    case Value[I] of
+      '0' .. '9':
+        W := 10 * W + (ord(Value[I]) - ord('0'));
+    else
+      W := 0;
+    end;
+  end;
+  Result := Char(W);
+end;
+
 function ConvertEntities(S: String): string;
 var
-  I, J: Integer;
-  T: String;
-  r: String;
+  tmp: string;
+  I, p: Integer;
+  Sb: TStringBuilder;
 begin
-  I := Low(S);
-  while I <= High(S) do
+  if Length(S) <= 3 then
+    Exit(S);
+  if Pos('&#', S) > 0 then
   begin
-    if S[I] = '&' then
-    begin
-      T := Copy(S, I, 1000);
-      T := LowerCase(Copy(T, 1, Pos(';', T)));
-      Delete(S, I, Length(T));
-      if (Length(T) > 2) and (T[2] = '#') then
-        if (Length(T) > 3) and (T[3] = 'x') then
-          r := WideChar(StrToIntDef('$' + Copy(T, 4, Length(T) - 4), 33))
-        else
-          r := WideChar(StrToIntDef(Copy(T, 3, Length(T) - 3), 0))
-      else
-      begin
-        r := '';
-        if gEntities.ContainsKey(T) then
-          r := gEntities[T]
-        else
-          r := T;
-      end;
-      Insert(r, S, I);
-    end;
-    Inc(I);
+    S[low(S)] := S[low(S)];
   end;
-  Result := S;
+
+  Sb := TStringBuilder.Create;
+  I := 0;
+  while I < length(S) do
+  begin
+    if S.Chars[I] = '&' then
+    begin
+      p := S.IndexOf(';', I);
+      tmp := LowerCase(S.Substring(I, p - I + 1));
+      if (Length(tmp) > 2) and (tmp.Chars[1] = '#') then
+      begin
+        if (Length(tmp) > 3) and (tmp.Chars[2] = '$') then
+          Sb.Append(HexToChar(tmp.Substring(3, Length(tmp) - 4)))
+        else
+          Sb.Append(DecToChar(tmp.Substring(2, Length(tmp) - 3)));
+      end
+      else if gEntities.ContainsKey(tmp) then
+        Sb.Append(gEntities[tmp])
+      else
+        Sb.Append(tmp);
+
+      Inc(I, Length(tmp));
+    end
+    else
+    begin
+      Sb.Append(S.Chars[I]);
+      Inc(I);
+    end;
+  end;
+  Result := Sb.ToString;
+  FreeAndNil(Sb);
 end;
 
 function ConvertWhiteSpace(S: String): string;
@@ -1956,7 +2007,7 @@ begin
   Inc(CodeIndex);
   CurrentChar := Code[CodeIndex];
 {$IFDEF DEBUG}
-    currentCode := PChar(@Code[CodeIndex]);
+  currentCode := PChar(@Code[CodeIndex]);
 {$ENDIF}
 end;
 
