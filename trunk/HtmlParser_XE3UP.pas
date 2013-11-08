@@ -1256,25 +1256,33 @@ begin
 
   Sb := TStringBuilder.Create;
   I := 0;
-  while I < length(S) do
+  while I < Length(S) do
   begin
     if S.Chars[I] = '&' then
     begin
       p := S.IndexOf(';', I);
-      tmp := LowerCase(S.Substring(I, p - I + 1));
-      if (Length(tmp) > 2) and (tmp.Chars[1] = '#') then
+      if p >= 0 then
       begin
-        if (Length(tmp) > 3) and (tmp.Chars[2] = '$') then
-          Sb.Append(HexToChar(tmp.Substring(3, Length(tmp) - 4)))
+        tmp := LowerCase(S.Substring(I, p - I + 1));
+        if (Length(tmp) > 2) and (tmp.Chars[1] = '#') then
+        begin
+          if (Length(tmp) > 3) and (tmp.Chars[2] = '$') then
+            Sb.Append(HexToChar(tmp.Substring(3, Length(tmp) - 4)))
+          else
+            Sb.Append(DecToChar(tmp.Substring(2, Length(tmp) - 3)));
+        end
+        else if gEntities.ContainsKey(tmp) then
+          Sb.Append(gEntities[tmp])
         else
-          Sb.Append(DecToChar(tmp.Substring(2, Length(tmp) - 3)));
+          Sb.Append(tmp);
+        Inc(I, Length(tmp));
       end
-      else if gEntities.ContainsKey(tmp) then
-        Sb.Append(gEntities[tmp])
       else
-        Sb.Append(tmp);
+      begin
+        Sb.Append(S.Chars[I]);
+        Inc(I);
+      end;
 
-      Inc(I, Length(tmp));
     end
     else
     begin
