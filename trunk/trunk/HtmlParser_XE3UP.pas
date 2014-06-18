@@ -604,13 +604,33 @@ var
       Result := UpperCase(sc.subStr(sc.CodeIndex + 2, Length(TagName)))
         = UpperCase(TagName);
     end;
-    {
+  end;
+
+  function PosCharInTag(AChar: Char): Boolean;
+  var
+    StrChar: Char;
+  begin
+    Result := false;
+    StrChar := #0;
+    while True do
+    begin
+      if sc.CurrentChar = #0 then
+        Break;
+      if sc.CurrentChar = '"' then
+      begin
+        if StrChar = #0 then
+          StrChar := sc.CurrentChar
+        else
+          StrChar := #0;
+      end;
+
+      if (sc.CurrentChar = AChar) and (StrChar = #0) then
+      begin
+        Result := True;
+        Break;
+      end;
       sc.IncSrc;
-      if sc.CurrentChar <> '/' then
-      Exit;
-      sc.IncSrc;
-      Result := UpperCase(sc.PeekStr()) = UpperCase(TagName);
-    }
+    end;
   end;
 
   function ParserStyleData(): string;
@@ -787,7 +807,10 @@ begin
               sc.IncSrc; // -
               while True do
               begin
-                if (sc.CurrentChar = '>') and (sc.charOfCurrent[-1] = '-') and
+                if not PosCharInTag('>') then
+                  DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                    sc.subStr(100))
+                else if (sc.charOfCurrent[-1] = '-') and
                   (sc.charOfCurrent[-2] = '-') then
                 begin
                   sc.IncSrc;
@@ -801,7 +824,10 @@ begin
               sc.IncSrc; //
               while True do
               begin
-                if (sc.CurrentChar = '>') and (sc.charOfCurrent[-1] = ']') then
+                if not PosCharInTag('>') then
+                  DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                    sc.subStr(100))
+                else if (sc.charOfCurrent[-1] = ']') then
                 begin
                   sc.IncSrc;
                   Break;
@@ -815,28 +841,20 @@ begin
             begin
               ElementType := EtDocType;
               sc.IncSrc; //
-              while True do
-              begin
-                if (sc.CurrentChar = '>') then
-                begin
-                  sc.IncSrc;
-                  Break;
-                end;
-                sc.IncSrc;
-              end;
+              if PosCharInTag('>') then
+                sc.IncSrc
+              else
+                DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                  sc.subStr(100));
             end
             else
             begin
               sc.IncSrc; //
-              while True do
-              begin
-                if (sc.CurrentChar = '>') then
-                begin
-                  sc.IncSrc;
-                  Break;
-                end;
-                sc.IncSrc;
-              end;
+              if PosCharInTag('>') then
+                sc.IncSrc
+              else
+                DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                  sc.subStr(100));
             end;
           end;
         end;
@@ -848,7 +866,10 @@ begin
         sc.IncSrc; //
         while True do
         begin
-          if (sc.CurrentChar = '>') and (sc.charOfCurrent[-1] = '?') then
+          if not PosCharInTag('>') then
+            DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+              sc.subStr(100))
+          else if (sc.charOfCurrent[-1] = '?') then
           begin
             sc.IncSrc;
             Break;
@@ -860,15 +881,11 @@ begin
       begin
         ElementType := EtTag;
         sc.IncSrc;
-        while True do
-        begin
-          if (sc.CurrentChar = '>') then
-          begin
-            sc.IncSrc;
-            Break;
-          end;
-          sc.IncSrc;
-        end;
+        if PosCharInTag('>') then
+          sc.IncSrc
+        else
+          DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+            sc.subStr(100));
       end;
       tmp := sc.subStr(OldCodeIndex, sc.CodeIndex - OldCodeIndex);
     end

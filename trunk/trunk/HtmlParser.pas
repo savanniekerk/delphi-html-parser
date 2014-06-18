@@ -17,7 +17,6 @@ unit HtmlParser;
 
 interface
 
-
 type
 {$IFNDEF MSWINDOWS}
   WideString = String;
@@ -1145,6 +1144,33 @@ var
     Result := UpperCase(PeekStr(P)) = UpperCase(TagName);
   end;
 
+  function PosCharInTag(var P: PChar; AChar: Char): Boolean;
+  var
+    StrChar: Char;
+  begin
+    Result := false;
+    StrChar := #0;
+    while True do
+    begin
+      if P^ = #0 then
+        Break;
+      if P^ = '"' then
+      begin
+        if StrChar = #0 then
+          StrChar := P^
+        else
+          StrChar := #0;
+      end;
+
+      if (P^ = AChar) and (StrChar = #0) then
+      begin
+        Result := True;
+        Break;
+      end;
+      IncSrc(P);
+    end;
+  end;
+
   function ParserStyleData(var P: PChar): string;
   var
     oldP: PChar;
@@ -1317,7 +1343,10 @@ begin
               IncSrc(P); // -
               while True do
               begin
-                if (P^ = '>') and (P[-1] = '-') and (P[-2] = '-') then
+                if not PosCharInTag(P, '>') then
+                  DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                    Copy(oldP, 1, 100))
+                else if (P[-1] = '-') and (P[-2] = '-') then
                 begin
                   IncSrc(P);
                   Break;
@@ -1330,7 +1359,10 @@ begin
               IncSrc(P); //
               while True do
               begin
-                if (P^ = '>') and (P[-1] = ']') then
+                if not PosCharInTag(P, '>') then
+                  DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                    Copy(oldP, 1, 100))
+                else if (P[-1] = ']') then
                 begin
                   IncSrc(P);
                   Break;
@@ -1344,28 +1376,20 @@ begin
             begin
               ElementType := EtDocType;
               IncSrc(P); //
-              while True do
-              begin
-                if (P^ = '>') then
-                begin
-                  IncSrc(P);
-                  Break;
-                end;
+              if not PosCharInTag(P, '>') then
+                DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                  Copy(oldP, 1, 100))
+              else
                 IncSrc(P);
-              end;
             end
             else
             begin
               IncSrc(P); //
-              while True do
-              begin
-                if (P^ = '>') then
-                begin
-                  IncSrc(P);
-                  Break;
-                end;
+              if not PosCharInTag(P, '>') then
+                DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+                  Copy(oldP, 1, 100))
+              else
                 IncSrc(P);
-              end;
             end;
           end;
         end;
@@ -1377,7 +1401,10 @@ begin
         IncSrc(P); //
         while True do
         begin
-          if (P^ = '>') and (P[-1] = '?') then
+          if not PosCharInTag(P, '>') then
+            DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+              Copy(oldP, 1, 100))
+          else if (P[-1] = '?') then
           begin
             IncSrc(P);
             Break;
@@ -1389,15 +1416,11 @@ begin
       begin
         ElementType := EtTag;
         IncSrc(P); //
-        while True do
-        begin
-          if (P^ = '>') then
-          begin
-            IncSrc(P);
-            Break;
-          end;
+        if not PosCharInTag(P, '>') then
+          DoError('LineNum:' + IntToStr(BeginLineNum) + '无法找到Tag结束点:' +
+            Copy(oldP, 1, 100))
+        else
           IncSrc(P);
-        end;
       end;
       SetString(Tmp, oldP, P - oldP);
     end
@@ -1494,7 +1517,6 @@ begin
   begin
     E := ElementList[I];
     TagProperty := GetTagProperty(E.FTagName);
-
 
     // 空节点,往下找,如果下一个带Tag的节点不是它的关闭节点,那么自动关闭
     {
